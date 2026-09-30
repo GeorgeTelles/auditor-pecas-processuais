@@ -1,0 +1,12 @@
+# Allowlist de PII — SÓ precedentes PÚBLICOS citados como caso-âncora do produto.
+# Regra: número de decisão pública sancionatória, com fonte institucional/imprensa documentada
+# em context/casos-ancora-sancoes.md. Nunca CPF, nunca OAB pessoal, nunca processo de cliente.
+# Uma string exata por linha.
+#
+# TRT-8, 3ª VT de Parauapebas — fonte branca + prompt injection, multa 10% (~R$ 84,2 mil).
+# Fonte: nota institucional trt7.jus.br + Migalhas (levantamento de 18/08/2026):
+0001062-55.2025.5.08.0130
+#
+# TJ/PR, 9ª Câmara Cível — jurisprudência inventada, multa 2%, ofício à OAB/PR.
+# Fonte: Migalhas 459252, WebFetch direto (levantamento de 18/08/2026):
+0108267-74.2025.8.16.0000

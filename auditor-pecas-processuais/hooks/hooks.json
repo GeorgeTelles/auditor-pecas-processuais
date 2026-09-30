@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Auditor de Peças Processuais] Carregado. Use /auditar-peca para auditar a peça recebida, ou /revisar-antes-de-protocolar para a sua.'"
+          }
+        ]
+      }
+    ]
+  }
+}

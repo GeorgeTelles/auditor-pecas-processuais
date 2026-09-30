@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "auditor-pecas-processuais-marketplace",
+  "description": "Marketplace do plugin Auditor de Peças Processuais — auditoria de integridade de peça processual: texto oculto, prompt injection, jurisprudência inventada, dispositivo de lei inexistente, metadados e gaps da tese.",
+  "owner": {
+    "name": "George Telles - AG TECH"
+  },
+  "plugins": [
+    {
+      "name": "auditor-pecas-processuais",
+      "source": "./auditor-pecas-processuais",
+      "description": "Auditor de Peças Processuais: audita a petição recebida da parte contrária e a sua antes do protocolo. Detecta texto oculto, prompt injection (oculto ou à vista), unicode invisível e homóglifos, metadados, jurisprudência inventada e dispositivo de lei inexistente, e gera relatório de auditoria. Sinaliza com evidência; nunca vende \"detector de IA\".",
+      "author": {
+        "name": "George Telles - AG TECH"
+      }
+    }
+  ]
+}

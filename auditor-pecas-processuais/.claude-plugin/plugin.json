@@ -1,0 +1,8 @@
+{
+  "name": "auditor-pecas-processuais",
+  "version": "1.0.0",
+  "description": "Auditor de Peças Processuais: audita a petição recebida da parte contrária e a sua antes do protocolo. Detecta texto oculto, prompt injection (oculto ou à vista), unicode invisível e homóglifos, metadados, jurisprudência inventada e dispositivo de lei inexistente, e gera relatório de auditoria. Sinaliza com evidência; nunca vende \"detector de IA\".",
+  "author": {
+    "name": "George Telles - AG TECH"
+  }
+}
