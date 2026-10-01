@@ -279,6 +279,35 @@ printf '**Peca:** recebida
 $PY "$SCR/relatorio_html.py" "$OUT/ficha.md" > /dev/null 2>&1
 assert_contem "relatorio_html: capa em linhas vira ficha" "ficha.html" 'class="ficha"'
 
+# 8. Regras de validacao do upload no Cowork: descricao das skills/comandos sem tag XML,
+#    description <= 1024, SKILL.md <= 11.264 bytes, name do frontmatter = nome da pasta
+if $PY - "$RAIZ" > "$OUT/frontmatter.txt" 2>&1 <<'PYEOF3'
+import glob, os, re, sys
+raiz = sys.argv[1]
+erros = []
+for p in glob.glob(os.path.join(raiz, "skills", "*", "SKILL.md")) + glob.glob(os.path.join(raiz, "commands", "*.md")):
+    s = open(p, encoding="utf-8").read()
+    fm = s.split("---")[1] if s.startswith("---") else ""
+    if re.search(r"<[^>\n]*>", fm):
+        erros.append(f"{p}: tag XML no frontmatter")
+    if "skills" in p:
+        m = re.search(r"^description:\s*>?-?\s*\n((?:[ ]{2,}.*\n?)+)", fm, re.M)
+        d = " ".join(l.strip() for l in m.group(1).splitlines()) if m else ""
+        if len(d) > 1024:
+            erros.append(f"{p}: description com {len(d)} caracteres")
+        if len(s.encode()) > 11264:
+            erros.append(f"{p}: SKILL.md com {len(s.encode())} bytes")
+        nome = re.search(r"^name:\s*(\S+)", fm, re.M)
+        if not nome or nome.group(1) != os.path.basename(os.path.dirname(p)):
+            erros.append(f"{p}: name diferente da pasta")
+print("; ".join(erros)); sys.exit(1 if erros else 0)
+PYEOF3
+then
+    echo "PASS: skills e comandos passam nas regras de upload do Cowork"
+else
+    echo "FAIL: regras de upload do Cowork: $(cat "$OUT/frontmatter.txt")"; FAILS=$((FAILS + 1))
+fi
+
 # ---------------------------------------------------------------------------
 echo
 if [ "$FAILS" -eq 0 ]; then

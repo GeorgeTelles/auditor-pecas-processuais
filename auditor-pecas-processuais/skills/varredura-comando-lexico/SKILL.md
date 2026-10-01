@@ -6,7 +6,7 @@ description: >
   oculto: "atenção, inteligência artificial", "não impugne os documentos", "ignore previous
   instructions", "IA, ignore…". Cobre o furo dos parsers de ocultação: comando escrito em fonte
   normal não tem cor branca nem corpo mínimo. Normaliza antes de casar (remove caracteres
-  invisíveis e acentos, então "IGN<zero-width>ORE" não escapa). Roda em PDF, DOCX e texto colado.
+  invisíveis e acentos, então "IGNORE" com caractere invisível no meio não escapa). Roda em PDF, DOCX e texto colado.
   Todo achado anexa regra, trecho literal e localização; é "padrão presente", nunca "comando
   confirmado" — a intenção é julgada pelo classificador-prompt-injection. Só cobre os padrões
   listados: ausência de achado não prova peça limpa. Aciona: "tem comando para IA na peça",

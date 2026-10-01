@@ -11,7 +11,7 @@ Contrato unico de CLI:
 Formato do envelope:
     {
       "parser": "<nome>",
-      "versao": "1.0.0",
+      "versao": "1.1.0",
       "arquivo": "<path>",
       "status": "ok" | "missing_dependency" | "error" | "formato_nao_suportado",
       "motor_usado": "<lib ou 'raw'>",
@@ -40,7 +40,7 @@ import os
 import sys
 from typing import Any
 
-VERSAO = "1.0.0"
+VERSAO = "1.1.0"
 
 # status possiveis (o `status` do envelope so pode ser um destes)
 STATUS_OK = "ok"
