@@ -99,6 +99,8 @@ Relatório final, resumo no chat e HTML/PDF são lidos por advogado. Nunca apare
 | `w:vanish`, run, estilo herdado | "texto marcado como oculto no Word" · "letra branca definida no estilo do documento" |
 
 Cada achado responde a três perguntas: **o que é, onde está e como o advogado confere sozinho**.
+Lista completa do que nunca se escreve e o formato dos cartões: `context/modelo-de-relatorio.md`.
+**Fale pouco:** no chat, no máximo 6 linhas na entrega final; explicação longa vai para o relatório.
 Fonte consultada (citação, lei) sai como link com ícone: `[🔗](URL da página aberta)`; sem página
 aberta, "—". Nunca link inventado.
 Dados brutos só em anexo técnico, quando pedido.

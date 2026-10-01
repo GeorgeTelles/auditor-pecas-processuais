@@ -22,56 +22,27 @@ e, opcionalmente, o mapa de gaps (C3) rodaram — para consolidar tudo num únic
 relatório que o advogado leva para a decisão (impugnar? periciar? arquivar?) e que o
 departamento jurídico circula internamente. Também via comando `/relatorio-auditoria`.
 
-## Leitor e linguagem — relatório para advogado
+## Formato e linguagem — `context/modelo-de-relatorio.md` (obrigatório)
 
-O relatório é lido por advogado ou técnico jurídico, não por programador. Escreva claro e didático,
-seguindo a tabela de linguagem de `estilo-e-fronteiras`: **nenhum** nome de script, biblioteca ou
-jargão técnico ("parser", "fetch", "bbox", "span", "RGB", "status ok", "motor"). Em vez do dado
-bruto, diga **o que é, onde está e como o advogado confere sozinho**. Exemplo:
-
-- ❌ `5× span com cor branca/quase-branca (rgb=255,255,255), pagina 7 (alta)`
-- ✅ "Cinco parágrafos em letra branca sobre fundo branco, com tamanho de quase 1 ponto (a letra
-  comum tem 12). Invisíveis na tela e no papel; um sistema de IA lê tudo. Página 7, entre os itens
-  5 e 6. Para ver: abra o PDF, vá à página 7 e aperte Ctrl+A."
-
-Não entram no relatório: hash/SHA-256 do arquivo (só quando o advogado pediu a comparação com um
-hash declarado), checklist interno de QA, contagem de ocorrências por programa. Os dados técnicos
-brutos continuam guardados: se o advogado ou um perito pedir, entregue um **anexo técnico** separado.
-
-## Capa
-
-Uma informação por linha, nesta ordem (o HTML monta a ficha a partir destas linhas):
-
-```markdown
-**Peça:** recebida da parte contrária (inicial trabalhista, 15 páginas)
-**Formato:** PDF
-**Data da análise:** 30/09/2026
-**Análises feitas:** auditoria completa, indícios de uso de IA e pontos fracos da peça
-```
-
-Logo abaixo, uma frase: *"Este relatório aponta o que foi encontrado no arquivo e onde. A conclusão
-jurídica é sua."* Depois, um **Resumo** com 3 a 5 itens numerados, o mais grave primeiro.
+Leia e siga **`context/modelo-de-relatorio.md`** antes de escrever: quem lê é advogado, assistente
+jurídico ou estagiário, não programador. Lá estão a ficha da capa, o resumo, a tabela do que **nunca**
+se escreve (nome de programa, "parser", "status ok", RGB, "metadados", tamanho do arquivo, "robots.txt",
+"o que rodou"...), o **cartão de achado** da seção B (um por achado, trecho literal destacado) e o
+fecho com "Limites desta análise" só quando algo não pôde ser verificado.
 
 Regras de conteúdo:
 
 - **Prompt injection pelo nome e pelo tipo.** Achado classificado 🎯 pelo `classificador-prompt-injection`
-  vira "**Prompt injection — [tipo de ataque]**: texto invisível na página N (ou no rodapé, cabeçalho,
-  comentário...)" no resumo e no título da seção B, com a explicação curta na primeira menção. Tipos:
-  desvio de função da IA, supressão de informação, indução de viés, padrão técnico, falsa autoridade.
-- **Fonte com link.** Nas tabelas da seção A, coluna **Fonte** com `[🔗](URL)` da página efetivamente
-  consultada (o HTML mostra um ícone clicável). Não conferida → "—".
-- **Seção C sem categoria vazia.** Liste só os níveis (forte, médio, fraco) que têm indício. Sem
-  nenhum: "Nenhum indício de uso de IA encontrado", mais os avisos de sempre.
-- **Conferência visual** (se o advogado pediu no `auditoria-master`): subseção própria em B, rotulada
-  "conferência visual assistida por IA — sinal, não prova".
-
-## Limites desta análise — só quando algo não foi verificado
-
-Não liste o que rodou. Se alguma verificação **não pôde ser feita** (formato não suportado,
-dependência ausente, site oficial fora do ar, texto colado sem arquivo), feche o relatório com a
-seção **"Limites desta análise"**, em linguagem simples, dizendo o que ficou de fora e como cobrir
-(ex.: "a busca por caracteres invisíveis só funciona em Word ou texto; envie a versão em Word").
-Silêncio sobre o que não foi verificado continua proibido — nunca vira "nada encontrado" (T1).
+  vira "**Prompt injection — [tipo de ataque]**" no resumo e no título do cartão, com a explicação curta
+  na primeira menção. Tipos: desvio de função da IA, supressão de informação, indução de viés, padrão
+  técnico, falsa autoridade.
+- **Fonte com link.** Tabelas da seção A com a coluna **Fonte** `[🔗](URL)` da página consultada.
+- **C e D só se escolhidas** no início pelo advogado (botões do `auditoria-master`). Não escolhidas →
+  as seções **não aparecem** (nada de "não solicitado"). Na seção C, liste só os níveis que têm indício.
+- **Conferência visual** (se escolhida): cartão próprio em B, rotulado "conferência visual assistida
+  por IA — sinal, não prova".
+- Dados técnicos brutos ficam guardados; se o advogado ou um perito pedir, entregue um **anexo técnico**
+  separado, nunca dentro do relatório.
 
 ## As 4 seções — naturezas que NUNCA se misturam
 
@@ -127,10 +98,10 @@ O dossiê é entregue em arquivo, não só no chat:
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/relatorio_html.py" <relatorio.md>` → cria o `.html` ao lado
    e acrescenta ao `.md` o rodapé de crédito do autor (uma vez só). O HTML é autocontido, abre
    offline e tem o botão **Exportar PDF** (impressão do navegador em A4 → "Salvar como PDF").
-   O JSON de saída traz `termos_tecnicos`: se não vier vazio, reescreva esses trechos em linguagem
-   de advogado e rode o script de novo.
-3. No chat: resumo curto (contagem por seção + próximos passos) e os links dos dois arquivos, com a
-   instrução "abra o HTML e clique em Exportar PDF".
+   Se o script devolver `status: revisar`, **o HTML não foi gerado**: reescreva no `.md` cada trecho
+   de `termos_tecnicos` com a troca sugerida e rode de novo, até `status: ok`.
+3. No chat: no máximo 6 linhas, sem termo técnico — achado principal, recomendação, os dois links
+   ("abra o HTML e clique em Exportar PDF") e o crédito.
 4. Script com `status: error` → entregue o `.md` mesmo assim e declare que o HTML não foi gerado.
 
 A mensagem do chat fecha com o crédito do autor, exatamente como em `estilo-e-fronteiras` (G7).

@@ -37,9 +37,12 @@ advogado, nunca da ferramenta.
 - O onboarding registrou uso principal "as próprias peças" e chegou um arquivo.
 - O `auditoria-master` identificou na triagem que a peça em análise é a **própria** do usuário.
 
-> **🖱️ Escolha de lista fechada = botões:** pergunte com **AskUserQuestion** qual arquivo será
-> auditado — **DOCX de trabalho** × **PDF final** × **os dois**. O ideal é auditar os dois: o DOCX
-> carrega revisões e comentários; o PDF é o que o tribunal recebe.
+> **🖱️ Escolha de lista fechada = botões (`AskUserQuestion`), numa única chamada, duas perguntas:**
+> 1. Qual arquivo será auditado — **DOCX de trabalho** × **PDF final** × **os dois** (o ideal: o DOCX
+>    carrega revisões e comentários; o PDF é o que o tribunal recebe).
+> 2. **Incluir também?** (várias escolhas) — *Nexo das suas citações com a tese* · *Indícios de uso de
+>    IA na redação* · *Conferência visual das páginas (só PDF)*. O que não for marcado **não roda e
+>    não aparece** no relatório.
 
 ## Etapa 1 — Varreduras determinísticas (as mesmas de C1, mesmo contrato)
 
@@ -90,25 +93,32 @@ Nunca valide citação "por leitura": sem WebFetch real, não há selo (T2).
 
 ## Etapa 4 — Checklist final pré-protocolo
 
-Só libere o "pronto para protocolo" com todas as caixas marcadas — e cada caixa com a **evidência**
-ao lado, nunca de memória:
+Só libere o "pronto para protocolo" quando nada estiver aberto. O checklist sai como tabela de 3
+colunas (Item · Situação · O que fazer), **em linguagem simples**, no formato de
+`context/modelo-de-relatorio.md`:
 
-- [ ] **Metadados limpos?** — `varredura-metadados` re-rodada no arquivo final; `achados[]` vazio ou só o esperado (autor = assinante, datas coerentes)
-- [ ] **Revisões aceitas?** — nenhum track change pendente no DOCX
-- [ ] **Comentários removidos?** — zero comentários no arquivo final
-- [ ] **Citações validadas?** — cada julgado com selo da `conferencia-de-citacoes`, ou declaradamente "não verificada" (pendência)
-- [ ] **Dispositivos conferidos?** — cada artigo com o resultado da `conferencia-de-dispositivos`
-- [ ] **Nexo conferido?** (só se rodou) — nenhuma citação 🚫 BLOQUEADA no `nexo-com-a-tese`
-- [ ] **PDF final regenerado?** — via impressão para PDF (não "salvar como"), e re-varrido depois
+- texto escondido no arquivo · caracteres invisíveis ou letras de outro alfabeto · código embutido no PDF
+- dados gravados no arquivo: autor igual ao signatário? comentários internos? revisões pendentes?
+- citações de jurisprudência conferidas (com 🔗) · artigos de lei conferidos (com 🔗)
+- nexo com a tese (só se escolhido): nenhuma citação 🚫 BLOQUEADA
+- PDF final gerado por "Imprimir para PDF" e verificado de novo
+
+Situação: ✅ Nada encontrado · ❌ Encontrado (onde) · ⚠️ Pendente (o quê). Nunca nome de programa,
+"status", "0 achados" ou campo técnico na coluna.
 
 Caixa sem evidência = caixa aberta. O relatório sai na voz do perfil definido no onboarding
 (individual: direta e prática; departamento jurídico: formal, com sumário executivo) e fecha
 **sempre** com o aviso da trava T5: a conferência final antes do protocolo é do advogado.
 
+**Formato do relatório:** siga `context/modelo-de-relatorio.md` (ficha, resumo com a recomendação
+"Não protocolar ainda" / "Pode protocolar", checklist, seções A e B com um cartão por achado, C e D só
+se escolhidas, próximos passos, limites, aviso).
+
 **Entrega em arquivo:** salve o relatório como `revisao-pre-protocolo-<nome-da-peça>-<AAAA-MM-DD>.md` e
 rode `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/relatorio_html.py" <relatorio.md>` para gerar o HTML com
-o botão **Exportar PDF** (mesmo fluxo do `dossie-de-integridade`). No chat, resumo + links dos dois
-arquivos, fechando com o crédito do autor (`estilo-e-fronteiras`).
+o botão **Exportar PDF** (mesmo fluxo do `dossie-de-integridade`; `status: revisar` = reescreva os
+termos técnicos apontados e rode de novo). No chat: no máximo 6 linhas, sem termo técnico, links dos
+dois arquivos e o crédito do autor.
 
 ## Travas / limites
 

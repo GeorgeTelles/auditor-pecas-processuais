@@ -12,7 +12,8 @@ CONTRATO / USO:
     python3 scripts/relatorio_html.py <relatorio.md> [-o saida.html]
 
 Saida no stdout: JSON com `status`, `arquivo_md`, `arquivo_html`, `credito_md_adicionado` e
-`termos_tecnicos` (jargao encontrado no relatorio; vazio = linguagem de advogado).
+`termos_tecnicos`. Com termo tecnico no relatorio, `status` sai `revisar` e o HTML NAO e gerado:
+cada item traz o trecho e a troca sugerida. `--forcar` gera mesmo assim (so para teste).
 
 SEGURANCA: o relatorio transcreve texto da peca analisada, que pode trazer HTML ou script
 plantado. Todo conteudo e escapado antes de qualquer marcacao; link so aceita http(s) e mailto;
@@ -329,6 +330,14 @@ tbody tr:nth-child(even) td{background:#fafbfc}
 .link-fonte{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:#eef3fb;color:var(--marca2);border:1px solid #d6e2f3}
 .link-fonte:hover{background:var(--marca2);color:#fff}
 .link-fonte svg{width:16px;height:16px}
+.achado{border:1px solid var(--linha);border-left:5px solid var(--ne);border-radius:10px;padding:14px 18px 10px;margin:14px 0;background:#fff}
+.achado-alta{border-left-color:var(--er)}.achado-media{border-left-color:var(--ouro)}.achado-baixa{border-left-color:var(--ne)}
+.achado>h3{margin:0 0 10px;font-size:15.5px;color:var(--marca)}
+.campo{margin:8px 0}
+.campo .rotulo{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--suave);font-weight:700;margin-bottom:2px}
+.campo>div{margin:0}
+blockquote.trecho{background:none;border:0;padding:0;margin:6px 0 10px}
+blockquote.trecho p{background:#fff6d6;border-left:4px solid #e0a800;border-radius:6px;padding:8px 12px;margin:6px 0;font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#3d2f00}
 .ficha{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:4px 0 12px}
 .ficha div{background:#f7f8fb;border:1px solid var(--linha);border-radius:10px;padding:10px 14px}
 .ficha dt{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--suave);font-weight:600;margin-bottom:2px}
@@ -350,7 +359,8 @@ tbody tr:nth-child(even) td{background:#fafbfc}
  main{max-width:none;padding:0 9mm}
  .hero{border-radius:0;margin:0 -9mm 12px;padding:20px 9mm 18px}
  .card{box-shadow:none;border-radius:8px;padding:12px 16px;margin-bottom:10px}
- tr,.caixa-cred,.ficha,blockquote.aviso{break-inside:avoid;page-break-inside:avoid}
+ tr,.caixa-cred,.ficha,blockquote.aviso,.campo,blockquote.trecho p{break-inside:avoid;page-break-inside:avoid}
+ .achado>h3{break-after:avoid;page-break-after:avoid}
  blockquote p{break-inside:avoid}
  h3,h4{break-after:avoid;page-break-after:avoid}
  h2,h3{break-after:avoid;page-break-after:avoid}
@@ -385,24 +395,57 @@ def montar_pagina(md: str) -> str:
 
     corpo: list[str] = []
     aberto = False
+    achado_aberto = False
+    letra_atual = ""
     corpo.append('<section class="card capa">')
     aberto = True
+
+    def fechar_achado() -> None:
+        nonlocal achado_aberto
+        if achado_aberto:
+            corpo.append("</div>")
+            achado_aberto = False
+
     for tipo, h, cru in bl:
         if tipo == "h2":
+            fechar_achado()
             if aberto:
                 corpo.append("</section>")
             m = _RE_SECAO.match(re.sub(r"[*_`]", "", cru))
             if m:
                 letra = m.group(1)
+                letra_atual = letra
                 resto = inline(_RE_SECAO.sub("", cru, count=1))
                 corpo.append(f'<section class="card secao secao-{letra.lower()}"><h2><span class="letra">{letra}</span>{resto}</h2>')
             else:
+                letra_atual = ""
                 corpo.append(f'<section class="card">{h}')
             aberto = True
             continue
         if tipo == "hr":
             continue  # separadores do markdown viram o espaco entre os cartoes
+        if tipo == "h3" and letra_atual == "B":
+            # cada achado da secao B vira um cartao proprio, com a cor da gravidade
+            fechar_achado()
+            g = re.search(r"\b(ALTA|M[ÉE]DIA|BAIXA)\b", cru, re.IGNORECASE)
+            grav = _grav_classe(g.group(1)) if g else "neutra"
+            corpo.append(f'<div class="achado achado-{grav}">{h}')
+            achado_aberto = True
+            continue
+        if achado_aberto and tipo == "p" and re.match(r"^\W*nada\s+encontrado", cru, re.IGNORECASE):
+            fechar_achado()  # linha de resumo "Nada encontrado: ..." fica fora do cartao
+        if achado_aberto:
+            # "**Rotulo:** texto" vira campo com rotulo em destaque; citacao vira trecho literal
+            mc = re.match(r"^<p><strong>([^<]{1,40}?):</strong>\s*(.*)</p>$", h, re.DOTALL)
+            if mc:
+                valor = mc.group(2).strip()
+                valor = re.sub(r"^((?:<[^>]+>)*)([a-zà-ú])", lambda x: x.group(1) + x.group(2).upper(), valor, count=1)
+                h = (f'<div class="campo"><span class="rotulo">{mc.group(1)}</span>'
+                     + (f"<div>{valor}</div>" if valor else "") + "</div>")
+            elif tipo == "quote" and 'class="aviso"' not in h:
+                h = h.replace('<blockquote class="nota">', '<blockquote class="trecho">', 1)
         corpo.append(h)
+    fechar_achado()
     if aberto:
         corpo.append("</section>")
     corpo_html = "\n".join(c for c in corpo if c != '<section class="card capa"></section>')
@@ -456,24 +499,51 @@ def montar_pagina(md: str) -> str:
 
 # Jargao que nao deve chegar ao advogado (ver a tabela de linguagem em estilo-e-fronteiras).
 # O script so APONTA: quem reescreve o trecho e a skill, e roda o script de novo.
-_JARGAO = [
-    (r"\bparsers?\b", "parser"), (r"\b(web)?fetch\b", "fetch"), (r"\bbbox\b", "bbox"),
-    (r"\bspans?\b", "span"), (r"\brgb\s*[=(]", "rgb"), (r"#[0-9a-f]{6}\b", "cor hexadecimal"),
-    (r"\bpymupdf\b|\bpikepdf\b|\bpdfplumber\b|\bfitz\b", "biblioteca"),
-    (r"\b[a-z_]+\.py\b", "nome de script"), (r"\bsha-?256\b", "sha-256"),
-    (r"missing_dependency|formato_nao_suportado|\bstatus\s+ok\b", "status interno"),
-    (r"\bcodepoints?\b|\bU\+[0-9A-F]{4,5}\b", "codepoint"), (r"\bxref\b", "xref"),
-    (r"\bjson\b", "json"), (r"\bregex\b", "regex"), (r"\bmotor\b", "motor"),
-    (r"\bG[1-8]\b.{0,40}(✔|✓)", "checklist interno"),
+# Jargao que nao pode chegar ao advogado (ver a tabela de linguagem em estilo-e-fronteiras).
+# (regex, termo, troque por). O script BLOQUEIA a geracao do HTML enquanto houver termo: quem
+# reescreve e a skill, e roda o script de novo.
+_JARGAO: list[tuple[str, str, str]] = [
+    (r"\bparsers?\b", "parser", "a verificação automática do arquivo"),
+    (r"\b(web)?fetch\b", "fetch", "consulta ao site oficial"),
+    (r"\bbbox\b|\bcoordenadas?\b", "bbox/coordenadas", "posição na página (\"no alto da página 7\")"),
+    (r"\bspans?\b", "span", "trecho"),
+    (r"\brgb\b", "rgb", "letra branca, igual ao fundo"),
+    (r"#[0-9a-f]{6}\b|\bcor\s+0x[0-9a-f]+", "código de cor", "o nome da cor (branca, cinza claro...)"),
+    (r"\bpymupdf\b|\bpikepdf\b|\bpdfplumber\b|\bfitz\b|\bstdlib\b", "nome de biblioteca", "não citar"),
+    (r"\b(pdf_integridade|docx_integridade|unicode_scan|lexico_scan|metadados_?py|hash_check|paginas_pdf|relatorio_html)\b|\b[a-z_]+\.py\b",
+     "nome de programa", "não citar o programa; diga o que foi verificado"),
+    (r"\bsha-?(1|256|512)\b|\bhash\b", "hash", "não citar (só se o advogado pediu a comparação)"),
+    (r"missing_dependency|formato_nao_suportado|\bstatus\s*[:=]?\s*(ok|error)\b", "status interno", "\"esta verificação não pôde ser feita\" + como resolver"),
+    (r"\bvisivel\s*[:=]\s*(true|false)\b|\b(true|false)\b", "campo interno", "\"texto visível\" ou \"texto escondido\""),
+    (r"\bcodepoints?\b|\bU\+[0-9A-F]{4,5}\b", "codepoint", "caractere invisível / letra de outro alfabeto"),
+    (r"\bunicode\b", "unicode", "caracteres invisíveis"),
+    (r"\bhom[oó]glifos?\b", "homóglifo", "letra de outro alfabeto que imita letra comum"),
+    (r"\bmetadados?\b|\bauthor\b|\bcreator\b|\bproducer\b|\bmoddate\b|\bcreationdate\b", "metadados", "dados gravados no arquivo (autor, datas, programa)"),
+    (r"/(js|javascript|openaction|launch|aa|embeddedfile)\b|\bpdf\s+ativo\b|\bconte[uú]do\s+ativo\b", "código de PDF", "\"código ou programa embutido no PDF\""),
+    (r"\bwhitelist\b|\blista\s+branca\b", "whitelist", "\"rodapé oficial reconhecido (PJe)\""),
+    (r"\brobots\.txt\b|\bcrawler\b|\banti-?bot\b|\bhttp\s*\d{3}\b|\b(403|404)\b", "detalhe de site", "\"o site oficial não abriu\" ou \"bloqueou a consulta automática\""),
+    (r"\b\d[\d.,]*\s*(bytes|kb|mb)\b", "tamanho do arquivo", "não citar"),
+    (r"\([+-]\d{2}:\d{2}\)|\s[+-]\d{2}:\d{2}\b", "fuso horário", "só a data e a hora"),
+    (r"\bmotor\s+(pymupdf|pikepdf|pdfplumber|raw|de\s+pdf|l[eé]xico)\b", "motor", "não citar"),
+    (r"\b(json|regex|xref|achados\[\]|envelope)\b", "termo de programação", "não citar"),
+    (r"\bG[1-8]\b.{0,40}(✔|✓)|\bchecklist\s+de\s+qa\b", "checklist interno", "não incluir no relatório"),
+    (r"\bo\s+que\s+rodou\b|\bn[aã]o\s+rodou\b|\brodou\b", "\"o que rodou\"", "não listar; o que não foi verificado vai para \"Limites desta análise\""),
+    (r"\bn[aã]o\s+solicitad[oa]\b", "seção não solicitada", "omitir a seção inteira"),
 ]
 
 
-def termos_tecnicos(md: str) -> list[str]:
+def termos_tecnicos(md: str) -> list[dict[str, str]]:
+    """Cada termo tecnico encontrado, com o trecho onde aparece e a troca sugerida."""
     texto = _sem_credito_md(md)
+    texto = re.sub(r"\]\([^)]*\)", "]", texto)  # endereco de link nao conta
     achados = []
-    for rx, nome in _JARGAO:
-        if re.search(rx, texto, re.IGNORECASE):
-            achados.append(nome)
+    for rx, termo, troca in _JARGAO:
+        m = re.search(rx, texto, re.IGNORECASE)
+        if m:
+            ini = texto.rfind("\n", 0, m.start()) + 1
+            fim = texto.find("\n", m.end())
+            linha = texto[ini: fim if fim != -1 else len(texto)].strip()
+            achados.append({"termo": termo, "trecho": linha[:160], "troque_por": troca})
     return achados
 
 
@@ -508,6 +578,14 @@ def _main(argv: list[str]) -> int:
             with open(md_path, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(md)
             adicionado = True
+        termos = termos_tecnicos(md)
+        if termos and "--forcar" not in argv:
+            return _emitir({
+                "status": "revisar", "arquivo_md": md_path, "arquivo_html": None,
+                "credito_md_adicionado": adicionado, "termos_tecnicos": termos,
+                "aviso": "HTML NAO gerado: o relatorio tem termo tecnico. Reescreva cada trecho listado "
+                         "em linguagem de advogado (campo troque_por) e rode o script de novo.",
+            })
         html_path = saida or os.path.splitext(md_path)[0] + ".html"
         with open(html_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(montar_pagina(md))
@@ -515,10 +593,7 @@ def _main(argv: list[str]) -> int:
         return _emitir({"status": "error", "arquivo_md": md_path, "erro": f"Falha ao gerar o HTML: {exc}"})
     return _emitir({
         "status": "ok", "arquivo_md": md_path, "arquivo_html": html_path,
-        "credito_md_adicionado": adicionado,
-        "termos_tecnicos": termos_tecnicos(md),
-        "aviso": "" if not termos_tecnicos(md) else
-                 "O relatorio tem jargao tecnico: reescreva esses trechos em linguagem de advogado e rode de novo.",
+        "credito_md_adicionado": adicionado, "termos_tecnicos": termos, "aviso": "",
     })
 
 

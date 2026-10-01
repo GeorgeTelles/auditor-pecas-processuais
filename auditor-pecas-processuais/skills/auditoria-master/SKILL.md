@@ -42,6 +42,11 @@ Três perguntas, sempre por botões:
    varredura C1 fica limitada a caracteres invisíveis/homóglifos e à varredura léxica (`lexico_scan.py`, a que
    mais rende aqui) — **declare essa limitação** na entrega.
 3. **O QUE você quer** — triagem completa · só citações · só varredura estrutural · dossiê.
+4. **Incluir também?** (várias escolhas, `multiSelect`) — *Indícios de uso de IA na redação* ·
+   *Pontos fracos da peça* · *Conferência visual das páginas (só PDF)*. O que não for marcado **não
+   roda e não aparece** no relatório (nunca escreva "não solicitado").
+
+Faça as perguntas numa única chamada de `AskUserQuestion`.
 
 Peça **própria** → roteia direto para `auditoria-pre-protocolo` (mesmas varreduras, voz de
 prevenção; citações e dispositivos próprios conferidos por `conferencia-de-citacoes` e
@@ -82,8 +87,7 @@ Cada parser devolve JSON no stdout:
 
 ### 1b. Conferência visual (opcional, só PDF)
 
-Pergunte por botão (`AskUserQuestion`): **Fazer conferência visual das páginas?** — *Sim, páginas com
-achado + a 1ª* · *Sim, todas* · *Não*. Se sim:
+Só se o advogado marcou *Conferência visual* na pergunta 4 (padrão: páginas com achado + a 1ª):
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/paginas_pdf.py" <arquivo.pdf> --saida <pasta-da-sessão> --paginas 1,7
@@ -105,12 +109,12 @@ rebaixa achado automático e, sozinha, não gera gravidade alta.
 - `classificador-prompt-injection` — **quando** o parser achou texto oculto, unicode **ou padrão
   léxico** (`lexico_scan`): o LLM julga a intenção do achado (comando dirigido a IA × citação
   legítima × erro de formatação); quem achou foi o parser.
-- `heuristica-uso-de-ia` — **só se o usuário pedir** o ponto "foi IA?" (sinal heurístico rotulado,
+- `heuristica-uso-de-ia` — **só se marcado** na pergunta 4 (sinal heurístico rotulado,
   nunca score — T3).
 
 ### 3. Camada C3 — fechamento
 
-- `mapa-de-gaps-da-tese` — quando pedido (rotulado análise estratégica, não integridade).
+- `mapa-de-gaps-da-tese` — só se marcado na pergunta 4 (rotulado análise estratégica, não integridade).
 - Fechamento **SEMPRE** pelo `dossie-de-integridade` — o entregável consolidado por gravidade, com a
   evidência de cada achado, salvo em **MD + HTML** (botão Exportar PDF) pelo `relatorio_html.py`, e
   com o crédito do autor no fim do chat.

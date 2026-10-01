@@ -270,7 +270,8 @@ printf '# Relatorio
 O parser achou span com rgb=255,255,255 via pdf_integridade.py.
 ' > "$OUT/jargao.md"
 $PY "$SCR/relatorio_html.py" "$OUT/jargao.md" > "$OUT/jargao.json" 2>&1
-assert_json   "relatorio_html: aponta jargao tecnico (parser, span, rgb, script)" "jargao.json"     'all(t in d["termos_tecnicos"] for t in ["parser", "span", "rgb", "nome de script"])'
+assert_json   "relatorio_html: aponta jargao tecnico (parser, span, rgb, programa)" "jargao.json"     'all(t in [x["termo"] for x in d["termos_tecnicos"]] for t in ["parser", "span", "rgb", "nome de programa"])'
+assert_json   "relatorio_html: com jargao NAO gera o HTML (status revisar)" "jargao.json"     'd["status"] == "revisar" and d["arquivo_html"] is None'
 assert_json   "relatorio_html: relatorio de exemplo sem jargao" "rel_run2.json" 'd["termos_tecnicos"] == []'
 printf '**Peca:** recebida
 **Formato:** PDF
