@@ -178,9 +178,105 @@ assert_json   "pje_rodape_com_comando.pdf: lexico acha o comando oculto (alta)" 
 assert_json   "isca.pdf: texto branco segue alta (regressao) e traz texto" "pdf_isca.json" \
     'any(a["tipo"] == "texto_oculto" and a["gravidade"] == "alta" and a.get("texto") for a in d["achados"])'
 
+# 6g2. palavra partida por espacamento de caracteres (comando oculto real visto em peticao)
+run "lexico_scan.py" "$FIX/isca_fragmentada.pdf" "lex_frag.json"
+assert_json   "isca_fragmentada.pdf: acha 'INSTRU CAO AO SISTEMA' com palavra partida" "lex_frag.json" \
+    'any(a["tag"] == "instrucao-ao-sistema-pt" and not a["visivel"] for a in d["achados"])'
+assert_json   "isca_fragmentada.pdf: acha 'igno re qualquer instrucao'" "lex_frag.json" \
+    'any(a["tag"] == "ignore-qualquer-instrucao-pt" for a in d["achados"])'
+
+# 6g3. unicode_scan em PDF (texto extraido pagina a pagina)
+if [ -f "$FIX/isca_unicode.pdf" ]; then
+    run "unicode_scan.py" "$FIX/isca_unicode.pdf" "uni_pdf.json"
+    assert_json "isca_unicode.pdf: unicode_scan acha homoglifo com a pagina" "uni_pdf.json" \
+        'any(a["tipo"] == "homoglifo" and a["localizacao"].startswith("pagina 1") for a in d["achados"])'
+else
+    echo "SKIP: isca_unicode.pdf nao gerada (PyMuPDF ausente)"
+fi
+run "unicode_scan.py" "$FIX/controle_limpo.pdf" "uni_ctrl_pdf.json"
+assert_json "controle.pdf: unicode_scan sem achado (ou dependencia declarada)" "uni_ctrl_pdf.json" \
+    '(d["status"] == "ok" and d["resumo"]["total_achados"] == 0) or d["status"] == "missing_dependency"'
+
+# 6g4. paginas_pdf: imagem + texto da pagina pedida
+$PY "$SCR/paginas_pdf.py" "$FIX/isca.pdf" --saida "$OUT/paginas" --paginas 1 > "$OUT/paginas.json" 2>&1
+assert_json "paginas_pdf: gera imagem e texto da pagina 1 (ou dependencia declarada)" "paginas.json" \
+    '(d["status"] == "ok" and d["paginas"][0]["pagina"] == 1 and d["paginas"][0]["imagem"].endswith(".png") and "IGNORE" in d["paginas"][0]["texto"]) or d["status"] == "missing_dependency"'
+
 # 6h. lexico_scan: arquivo inexistente -> erro limpo
 $PY "$SCR/lexico_scan.py" "$FIX/nao_existe.txt" > "$OUT/err_lex.json" 2>&1
 assert_contem "lexico_scan: arquivo inexistente status error limpo" "err_lex.json" '"status": "error"'
+
+# ---------------------------------------------------------------------------
+# 6i. Corpus dos 5 grupos de ataque (A-E) em DOCX e PDF + controles limpos
+#     gerado numa pasta temporaria (nao suja o repositorio a cada rodada)
+# ---------------------------------------------------------------------------
+$PY "$SCR/gerar_corpus.py" --saida "$OUT/corpus" > "$OUT/corpus_gerar.log" 2>&1
+if $PY "$SCR/avaliar_corpus.py" "$OUT/corpus" > "$OUT/corpus.txt" 2>&1; then
+    echo "PASS: corpus A-E: 100% detectado e 0 alarme falso nos controles"
+else
+    echo "FAIL: corpus A-E com deteccao faltando ou alarme falso"
+    sed 's/^/      /' "$OUT/corpus.txt" | grep -E "FALHOU|ALARME|AUSENTE|RESULTADO|Grupo" || sed 's/^/      /' "$OUT/corpus.txt" | tail -20
+    FAILS=$((FAILS + 1))
+fi
+# cada variacao de frase, sozinha, tem de disparar (nao basta 1 por grupo)
+if $PY -c "
+import sys; sys.path.insert(0, '$SCR')
+import gerar_corpus as G, _padroes as P
+faltas = [f for fs in G.VARIACOES.values() for f in fs if not P.achados_lexicos(f)]
+fps = [f for f in G.LEGITIMO if P.achados_lexicos(f)]
+print('faltas:', faltas, 'alarmes:', fps); sys.exit(1 if faltas or fps else 0)
+" > "$OUT/variacoes.txt" 2>&1; then
+    echo "PASS: cada variacao de frase dispara e nenhuma frase juridica legitima dispara"
+else
+    echo "FAIL: variacoes/legitimas: $(cat "$OUT/variacoes.txt")"; FAILS=$((FAILS + 1))
+fi
+# docx_integridade direto: arquivo inexistente -> erro limpo; DOCX limpo -> 0
+$PY "$SCR/docx_integridade.py" "$FIX/nao_existe.docx" > "$OUT/err_docx.json" 2>&1
+assert_contem "docx_integridade: arquivo inexistente status error limpo" "err_docx.json" '"status": "error"'
+run "docx_integridade.py" "$FIX/controle_limpo.docx" "docx_ctrl.json"
+assert_contem "controle.docx: docx_integridade total_achados 0" "docx_ctrl.json" '"total_achados": 0'
+
+# ---------------------------------------------------------------------------
+# 7. Relatorio HTML: credito do autor, botao de PDF e escape do conteudo da peca
+# ---------------------------------------------------------------------------
+cp "$FIX/relatorio_exemplo.md" "$OUT/rel.md"
+$PY "$SCR/relatorio_html.py" "$OUT/rel.md" -o "$OUT/rel.html" > "$OUT/rel_run1.json" 2>&1
+$PY "$SCR/relatorio_html.py" "$OUT/rel.md" -o "$OUT/rel.html" > "$OUT/rel_run2.json" 2>&1
+assert_contem "relatorio_html: status ok"                         "rel_run1.json" '"status": "ok"'
+assert_contem "relatorio_html: 1a rodada acrescenta credito no MD" "rel_run1.json" '"credito_md_adicionado": true'
+assert_contem "relatorio_html: 2a rodada nao duplica o credito"    "rel_run2.json" '"credito_md_adicionado": false'
+if [ "$(grep -c 'credito-autor' "$OUT/rel.md")" -eq 1 ]; then echo "PASS: MD tem o rodape de credito uma unica vez"; else echo "FAIL: rodape de credito duplicado ou ausente no MD"; FAILS=$((FAILS + 1)); fi
+assert_contem "HTML traz a frase de credito"       "rel.html" 'Esta skill foi desenvolvida por George Telles.'
+assert_contem "HTML traz o e-mail"                 "rel.html" 'mailto:georgesmattos@gmail.com'
+assert_contem "HTML traz o LinkedIn"               "rel.html" 'https://www.linkedin.com/in/georgetelles/'
+assert_contem "HTML traz o WhatsApp"               "rel.html" 'https://wa.me/5571988229457'
+assert_contem "HTML traz o botao Exportar PDF"     "rel.html" 'window.print()'
+assert_contem "HTML escapa o <script> da peca"     "rel.html" '&lt;script&gt;alert(1)&lt;/script&gt;'
+if grep -q 'javascript:' "$OUT/rel.html" || grep -q '<script>alert' "$OUT/rel.html"; then
+    echo "FAIL: HTML deixou passar script ou link javascript: da peca"; FAILS=$((FAILS + 1))
+else
+    echo "PASS: HTML neutraliza script e link javascript: plantados"
+fi
+
+# 7a. link da fonte com icone: https vira icone com o site; javascript: e neutralizado
+printf '# T\n\n| A | Fonte |\n|---|---|\n| x | [🔗](https://www.planalto.gov.br/ccivil_03/decreto-lei/del5452.htm) |\n| y | [🔗](javascript:alert(3)) |\n' > "$OUT/link.md"
+$PY "$SCR/relatorio_html.py" "$OUT/link.md" > /dev/null 2>&1
+assert_contem "relatorio_html: [🔗](url) vira icone com o site" "link.html" 'title="Abrir a fonte: planalto.gov.br"'
+if grep -q 'javascript:' "$OUT/link.html"; then echo "FAIL: icone 🔗 deixou passar javascript:"; FAILS=$((FAILS + 1)); else echo "PASS: icone 🔗 neutraliza javascript:"; fi
+
+# 7b. verificador de jargao: relatorio com termo tecnico e apontado; o de exemplo sai limpo
+printf '# Relatorio
+
+O parser achou span com rgb=255,255,255 via pdf_integridade.py.
+' > "$OUT/jargao.md"
+$PY "$SCR/relatorio_html.py" "$OUT/jargao.md" > "$OUT/jargao.json" 2>&1
+assert_json   "relatorio_html: aponta jargao tecnico (parser, span, rgb, script)" "jargao.json"     'all(t in d["termos_tecnicos"] for t in ["parser", "span", "rgb", "nome de script"])'
+assert_json   "relatorio_html: relatorio de exemplo sem jargao" "rel_run2.json" 'd["termos_tecnicos"] == []'
+printf '**Peca:** recebida
+**Formato:** PDF
+' > "$OUT/ficha.md"
+$PY "$SCR/relatorio_html.py" "$OUT/ficha.md" > /dev/null 2>&1
+assert_contem "relatorio_html: capa em linhas vira ficha" "ficha.html" 'class="ficha"'
 
 # ---------------------------------------------------------------------------
 echo

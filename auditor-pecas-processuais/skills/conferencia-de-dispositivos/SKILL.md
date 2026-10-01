@@ -92,11 +92,14 @@ Lado a lado obrigatório para todo ⚠️ deturpado:
 ```markdown
 ## Dispositivos da peça [recebida | própria] — [N] extraídos
 
-| # | Dispositivo | Status | Evidência | Ação |
-|---|---|---|---|---|
+| # | Dispositivo | Status | Evidência | Fonte | Ação |
+|---|---|---|---|---|---|
 
 **Resumo:** ✅ N · ⚠️ deturpado N · ⚠️ revogado N · 🔴 N · ⬜ N
 ```
+
+Coluna **Fonte**: `[🔗](URL)` da página oficial aberta (ex.: a lei no Planalto); anexo local →
+"anexo do plugin"; sem página aberta → "—".
 
 **🔴 inexistente confirmado e ⚠️ deturpado confirmado → munição:** anexe a evidência (fonte
 aberta + lado a lado) e roteie para o `gerador-topico-impugnacao` — o fundamento do tópico é o

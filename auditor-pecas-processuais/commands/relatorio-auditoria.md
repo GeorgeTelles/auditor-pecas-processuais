@@ -11,6 +11,9 @@ sempre do advogado).
 
 **Skill a acionar:** `dossie-de-integridade`
 
+Saída em dois arquivos: `.md` e `.html` (este com o botão **Exportar PDF**), gerados pelo
+`scripts/relatorio_html.py`, com o crédito do autor no fim.
+
 O dossiê distingue quatro naturezas de achado: veredito por evidência (citação 🔴, dispositivo
 inexistente) · sinal determinístico (texto oculto, unicode, metadado, hash) · sinal heurístico
 (possível uso de IA — rotulado, nunca prova; trava T3) · análise estratégica (gaps — seção

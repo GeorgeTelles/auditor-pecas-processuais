@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .aiox/
 .synapse/
+
+# corpus de teste: gerado sob demanda por scripts/gerar_corpus.py
+auditor-pecas-processuais/scripts/fixtures/corpus/

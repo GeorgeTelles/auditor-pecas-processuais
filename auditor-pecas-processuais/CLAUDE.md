@@ -25,7 +25,7 @@ Público: advogado individual **+ departamento jurídico PJ**. Orquestrador `aud
    tribunal; dito com todas as letras.
 
 ## Motor — determinístico decide, LLM julga (nunca o contrário)
-Parsers em `scripts/` — `pdf_integridade`, `unicode_scan`, `lexico_scan`, `metadados`, `hash_check`
+Parsers em `scripts/` — `pdf_integridade`, `docx_integridade` (Word: todas as partes + formatação herdada; leitor em `_docx.py`), `unicode_scan`, `lexico_scan` (padrões por grupo de ataque A–E em `_padroes.py`), `metadados`, `hash_check`; corpus de teste `gerar_corpus.py` + `avaliar_corpus.py`; conferência visual `paginas_pdf` (páginas em imagem + texto guardado); gerador de relatório `relatorio_html` (MD → HTML com Exportar PDF; crédito e contatos em `_marca.py`)
 (padrões léxicos e whitelist PJe compartilhados em `_padroes.py`) (contrato: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/<parser>.py" <arquivo>` →
 JSON no stdout com `status: ok | missing_dependency | error | formato_nao_suportado` +
 `achados[]`). Cadeia com degradação graciosa
@@ -50,8 +50,12 @@ dispositivo é **interna** (`conferencia-de-citacoes`, `conferencia-de-dispositi
 - `hooks.json` no schema **WRAPPED** com `SessionStart` rodando `echo` — **nunca `python`**.
 - `plugin.json` com os 4 campos canônicos.
 - PT-BR com acentuação correta em todo conteúdo.
+- Toda entrega final termina com o crédito do autor (chat, MD e HTML/PDF) — gate G7.
+- Licença de uso restrito (`LICENSE`): uso pessoal e profissional próprio; sem cópia, venda, redistribuição ou modificação.
 
 ## Gate antes de qualquer entrega
 `PY=python bash scripts/smoke_test.sh` (no Linux/Cowork, `bash scripts/smoke_test.sh`) — FAIL não
-empacota. Conferir também os limites de tamanho acima. Smoke dos parsers com **PDF-isca** (controle positivo: o parser tem que ACHAR a fonte branca e o
+empacota. Inclui o corpus dos 5 grupos de ataque: 100% de detecção e 0 alarme falso, senão FAIL.
+Padrão novo? Acrescente o ataque em `gerar_corpus.py` (`VARIACOES`) e uma frase jurídica legítima
+parecida em `LEGITIMO`. Conferir também os limites de tamanho acima. Smoke dos parsers com **PDF-isca** (controle positivo: o parser tem que ACHAR a fonte branca e o
 unicode plantados — "verificar com isca antes de confiar no silêncio").

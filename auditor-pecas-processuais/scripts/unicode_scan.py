@@ -15,6 +15,7 @@ Stdlib pura — nao requer nenhuma dependencia externa. Detecta em texto de peca
 ENTRADA:
     - arquivo `.txt` / `.md`  (lido como UTF-8)
     - arquivo `.docx`         (texto extraido de word/document.xml via zipfile+regex)
+    - arquivo `.pdf`          (texto extraido pagina a pagina via PyMuPDF; sem a lib -> missing_dependency)
     - texto por stdin         (passe `-` como caminho)
 
 CONTRATO / USO:
@@ -51,54 +52,7 @@ INVISIVEIS = {
 # (c) controles bidirecionais
 BIDI = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))  # 202A..202E, 2066..2069
 
-# (d) tabela minima embutida de confusaveis (cirilico/grego -> latino).
-# Chave = codepoint do confusavel; valor = (letra latina imitada, script).
-HOMOGLIFOS: dict[int, tuple[str, str]] = {
-    # --- cirilico minusculo ---
-    0x0430: ("a", "CIRILICO"),  # а
-    0x0435: ("e", "CIRILICO"),  # е
-    0x043E: ("o", "CIRILICO"),  # о
-    0x0440: ("p", "CIRILICO"),  # р
-    0x0441: ("c", "CIRILICO"),  # с
-    0x0443: ("y", "CIRILICO"),  # у
-    0x0445: ("x", "CIRILICO"),  # х
-    0x0456: ("i", "CIRILICO"),  # і
-    0x0455: ("s", "CIRILICO"),  # ѕ
-    0x0458: ("j", "CIRILICO"),  # ј
-    0x04BB: ("h", "CIRILICO"),  # һ
-    # --- cirilico maiusculo ---
-    0x0410: ("A", "CIRILICO"),  # А
-    0x0412: ("B", "CIRILICO"),  # В
-    0x0415: ("E", "CIRILICO"),  # Е
-    0x041A: ("K", "CIRILICO"),  # К
-    0x041C: ("M", "CIRILICO"),  # М
-    0x041D: ("H", "CIRILICO"),  # Н
-    0x041E: ("O", "CIRILICO"),  # О
-    0x0420: ("P", "CIRILICO"),  # Р
-    0x0421: ("C", "CIRILICO"),  # С
-    0x0422: ("T", "CIRILICO"),  # Т
-    0x0425: ("X", "CIRILICO"),  # Х
-    0x0423: ("Y", "CIRILICO"),  # У
-    0x0406: ("I", "CIRILICO"),  # І
-    # --- grego ---
-    0x03BF: ("o", "GREGO"),  # ο
-    0x03BD: ("v", "GREGO"),  # ν
-    0x03C1: ("p", "GREGO"),  # ρ
-    0x0391: ("A", "GREGO"),  # Α
-    0x0392: ("B", "GREGO"),  # Β
-    0x0395: ("E", "GREGO"),  # Ε
-    0x0396: ("Z", "GREGO"),  # Ζ
-    0x0397: ("H", "GREGO"),  # Η
-    0x0399: ("I", "GREGO"),  # Ι
-    0x039A: ("K", "GREGO"),  # Κ
-    0x039C: ("M", "GREGO"),  # Μ
-    0x039D: ("N", "GREGO"),  # Ν
-    0x039F: ("O", "GREGO"),  # Ο
-    0x03A1: ("P", "GREGO"),  # Ρ
-    0x03A4: ("T", "GREGO"),  # Τ
-    0x03A7: ("X", "GREGO"),  # Χ
-    0x03A5: ("Y", "GREGO"),  # Υ
-}
+from _homoglifos import HOMOGLIFOS  # noqa: E402  (tabela compartilhada com _padroes)
 
 _RE_WT = re.compile(r"<w:t[^>]*>(.*?)</w:t>", re.DOTALL)
 _RE_PALAVRA = re.compile(r"\w+", re.UNICODE)
@@ -244,6 +198,65 @@ def _scan_homoglifos_lib(texto: str) -> list[dict[str, Any]]:
     return achados
 
 
+AVISO_PDF = (
+    "Em PDF, caracteres invisiveis so aparecem se o arquivo os guardar no texto; o Word costuma "
+    "descarta-los ao gerar o PDF. Letras de outro alfabeto sao preservadas."
+)
+
+
+def analisar_pdf(path: str) -> dict[str, Any]:
+    """Extrai o texto do PDF pagina a pagina e roda a mesma varredura de texto."""
+    try:
+        import fitz  # type: ignore  # PyMuPDF
+    except ImportError:
+        return C.envelope(
+            PARSER, path, C.STATUS_DEP, "n/a", [],
+            dependency_hint="pip install pymupdf",
+            extra={"aviso": "Varredura de caracteres em PDF nao executada: PyMuPDF ausente."},
+        )
+    achados: list[dict[str, Any]] = []
+    doc = fitz.open(path)
+    try:
+        for pno in range(doc.page_count):
+            texto = doc[pno].get_text("text", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+            for a in _scan_char_a_char(texto) + _scan_homoglifos_embutido(texto):
+                a["localizacao"] = f"pagina {pno + 1}, {a['localizacao']}"
+                achados.append(a)
+    finally:
+        doc.close()
+    return C.envelope(PARSER, path, C.STATUS_OK, "PyMuPDF", achados,
+                      extra={"origem_texto": "pdf:texto extraido", "aviso": AVISO_PDF})
+
+
+def analisar_docx(path: str) -> dict[str, Any]:
+    """Varre todas as partes do Word (corpo, cabecalho, rodape, notas, comentarios...)."""
+    import _docx
+    achados: list[dict[str, Any]] = []
+    for z in _docx.ler(path):
+        for a in _scan_char_a_char(z.texto) + _scan_homoglifos_embutido(z.texto):
+            a["localizacao"] = f"{z.nome}, {a['localizacao']}"
+            a["zona"] = z.nome
+            achados.append(a)
+    return C.envelope(PARSER, path, C.STATUS_OK, "stdlib", achados,
+                      extra={"origem_texto": "docx:todas as partes"})
+
+
+def analisar(path: str) -> dict[str, Any]:
+    """Ponto de entrada unico (usado tambem pela avaliacao do corpus)."""
+    import _docx
+    with open(path, "rb") as fh:
+        cab = fh.read(1024)
+    if b"%PDF" in cab:
+        return analisar_pdf(path)
+    if cab.startswith(b"PK") and _docx.eh_docx(path):
+        return analisar_docx(path)
+    resultado = _ler_texto(path)
+    if isinstance(resultado, dict):
+        return resultado
+    texto, origem = resultado
+    return analisar_texto(texto, path, origem)
+
+
 def analisar_texto(texto: str, path: str, origem: str) -> dict[str, Any]:
     achados = _scan_char_a_char(texto) + _scan_homoglifos_embutido(texto)
 
@@ -268,6 +281,13 @@ def _main(argv: list[str]) -> int:
         msg = C.checar_arquivo(PARSER, path)
         if msg:
             C.emitir(C.erro(PARSER, path, msg))
+            return 0
+
+    if path != "-":
+        try:
+            return C.emitir(analisar(path))
+        except Exception as exc:
+            C.emitir(C.erro(PARSER, path, f"Falha ao ler o arquivo: {exc}"))
             return 0
 
     try:

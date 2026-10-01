@@ -313,12 +313,24 @@ def _tier_fitz(path: str) -> tuple[list[dict[str, Any]], str] | None:
         for pno in range(doc.page_count):
             page = doc[pno]
             altura = page.rect.height
-            info = page.get_text("dict")
+            try:  # le tambem o que esta fora da area visivel da pagina
+                info = page.get_text("dict", clip=fitz.INFINITE_RECT())
+            except Exception:
+                info = page.get_text("dict")
             for bloco in info.get("blocks", []):
                 for linha in bloco.get("lines", []):
                     for span in linha.get("spans", []):
                         texto_span = (span.get("text") or "").strip()
                         zona = P.classificar_zona(span.get("bbox"), altura)
+                        bb = span.get("bbox")
+                        if texto_span and bb and not fitz.Rect(bb).intersects(page.rect):
+                            achados.append(
+                                C.achado("texto_oculto", "alta" if P.tem_padrao_lexico(texto_span) else "media",
+                                         "texto posicionado fora da area visivel da pagina",
+                                         f"pagina {pno + 1}", texto=texto_span[:_MAX_TEXTO],
+                                         zona="fora da página", whitelist=False)
+                            )
+                            continue
                         cor_int = span.get("color", 0)
                         r = (cor_int >> 16) & 255
                         g = (cor_int >> 8) & 255
@@ -493,6 +505,11 @@ def _tier_pdfplumber(path: str) -> tuple[list[dict[str, Any]], str] | None:
 def analisar(path: str) -> dict[str, Any]:
     with open(path, "rb") as fh:
         cabecalho = fh.read(1024)
+    if cabecalho.startswith(b"PK"):
+        import _docx
+        if _docx.eh_docx(path):  # Word: verificacao propria, com as mesmas regras de gravidade
+            import docx_integridade
+            return docx_integridade.analisar(path)
     if b"%PDF" not in cabecalho:
         return C.envelope(
             PARSER, path, C.STATUS_FORMATO, "n/a", [],

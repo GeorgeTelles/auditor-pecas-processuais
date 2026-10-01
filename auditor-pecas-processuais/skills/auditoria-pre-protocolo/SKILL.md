@@ -105,6 +105,11 @@ Caixa sem evidência = caixa aberta. O relatório sai na voz do perfil definido 
 (individual: direta e prática; departamento jurídico: formal, com sumário executivo) e fecha
 **sempre** com o aviso da trava T5: a conferência final antes do protocolo é do advogado.
 
+**Entrega em arquivo:** salve o relatório como `revisao-pre-protocolo-<nome-da-peça>-<AAAA-MM-DD>.md` e
+rode `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/relatorio_html.py" <relatorio.md>` para gerar o HTML com
+o botão **Exportar PDF** (mesmo fluxo do `dossie-de-integridade`). No chat, resumo + links dos dois
+arquivos, fechando com o crédito do autor (`estilo-e-fronteiras`).
+
 ## Travas / limites
 
 - **T1** — nenhum selo estrutural sem o parser ter rodado e retornado o dado bruto; sem lib,

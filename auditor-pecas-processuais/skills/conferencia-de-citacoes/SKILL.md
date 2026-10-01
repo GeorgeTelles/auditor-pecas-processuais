@@ -96,10 +96,10 @@ observação; divergiu → ⚠️ `agregador divergente do oficial`.
 ```markdown
 ## Citações da peça [recebida | própria] — [N] extraídas
 
-| # | Citação (Tribunal · número) | Status | Evidência | Ação |
-|---|---|---|---|---|
-| 1 | STJ · REsp ... | ✅ | fetch 200, nº + trecho + metadados | citação íntegra — mérito é outro exame |
-| 2 | TJXX · ... | 🔴 | queries: [lista] — não localizada | candidato a munição → gerador-topico-impugnacao |
+| # | Citação (Tribunal · número) | Status | Evidência | Fonte | Ação |
+|---|---|---|---|---|---|
+| 1 | STJ · REsp ... | ✅ | fetch 200, nº + trecho + metadados | [🔗](URL da página aberta) | citação íntegra — mérito é outro exame |
+| 2 | TJXX · ... | 🔴 | queries: [lista] — não localizada | — | candidato a munição → gerador-topico-impugnacao |
 
 **Resumo:** ✅ N · ⚠️ N · 🔴 N · ⬜ N
 ```
@@ -108,6 +108,9 @@ Para cada 🔴: anexe as queries tentadas + a nota **"padrão consolidado de san
 casos-âncora (`context/casos-ancora-sancoes.md`)"** e roteie para o
 `gerador-topico-impugnacao` (peça recebida) — ou marque "corrigir ou retirar antes do protocolo"
 (peça própria). Cada ⚠️ e ⬜ sai com a recomendação de conferência manual antes de qualquer uso.
+
+**Fonte:** a coluna leva `[🔗](URL)` da página em que a validação foi feita — a mesma do fetch. Sem
+página aberta (⬜, 🔴 sem URL), "—". Agregador: `[🔗](URL) agregador`.
 
 **Proibições absolutas:**
 1. Nunca "completar" campo da citação (relator, data, órgão) com o que não apareceu na página.

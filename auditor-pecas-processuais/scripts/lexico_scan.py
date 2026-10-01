@@ -8,8 +8,10 @@ em fonte preta normal nao dispara nenhum parser de ocultacao, mas dispara este.
 
 ENTRADA:
     - arquivo `.txt` / `.md`  (UTF-8)
-    - arquivo `.docx`         (texto de word/document.xml, via zipfile)
-    - arquivo `.pdf`          (PyMuPDF; sem a lib -> status missing_dependency, nunca finge)
+    - arquivo `.docx`         (todas as partes: corpo, cabecalho, rodape, notas, comentarios,
+                               caixas de texto, propriedades; trecho oculto pela formatacao)
+    - arquivo `.pdf`          (paginas + anotacoes, campos de formulario, propriedades e marcadores;
+                               PyMuPDF; sem a lib -> status missing_dependency, nunca finge)
     - texto por stdin         (passe `-` como caminho)
 
 CONTRATO / USO:
@@ -36,8 +38,8 @@ import zipfile
 from typing import Any
 
 import _contrato as C
+import _docx as DX
 import _padroes as P
-from unicode_scan import _texto_de_docx
 
 PARSER = "lexico_scan"
 
@@ -63,8 +65,10 @@ def _achado_lexico(
     oculto: bool,
     **extra: Any,
 ) -> dict[str, Any]:
-    quando = "TRECHO OCULTO (branco/fonte minuscula)" if oculto else "texto visivel"
-    ev = f"padrao lexico «{tag}» presente ({quando}): «{trecho}» — padrao presente, nao comando confirmado"
+    quando = "TRECHO OCULTO ou fora do texto impresso" if oculto else "texto visivel"
+    grupo = P.grupo_de(tag)
+    ev = (f"frase de comando a IA ({P.GRUPOS[grupo]}) presente ({quando}): «{trecho}» — "
+          "padrao presente, nao comando confirmado")
     return C.achado(
         "comando_lexico",
         _gravidade(severidade, oculto),
@@ -74,6 +78,8 @@ def _achado_lexico(
         trecho=trecho,
         contexto=contexto,
         visivel=not oculto,
+        grupo=grupo,
+        grupo_nome=P.GRUPOS[grupo],
         **extra,
     )
 
@@ -94,19 +100,26 @@ def _achados_de_texto(texto: str) -> list[dict[str, Any]]:
     return achados
 
 
+def _achados_de_docx(path: str) -> dict[str, Any]:
+    """Todas as partes do Word, com zona e marca de trecho oculto por formatacao."""
+    achados: list[dict[str, Any]] = []
+    for z in DX.ler(path):
+        vistos: set[tuple[str, int]] = set()
+        for tag, sev, trecho, ini, fim, ctx in P.achados_lexicos(z.texto):
+            if (tag, ini) in vistos:
+                continue
+            vistos.add((tag, ini))
+            tocados = [f for f in z.faixas if f.ini < fim and f.fim > ini]
+            oculto = z.nao_exibida or any(f.motivos for f in tocados)
+            achados.append(_achado_lexico(tag, sev, trecho, ctx, z.nome, oculto, zona=z.nome))
+    return C.envelope(PARSER, path, C.STATUS_OK, "stdlib", achados, extra={"origem_texto": "docx:todas as partes"})
+
+
 def _ler_texto(path: str) -> tuple[str, str] | dict[str, Any]:
     """Retorna (texto, origem) ou um envelope de erro/formato ja pronto (dict)."""
     if path == "-":
         return sys.stdin.read(), "stdin"
     baixo = path.lower()
-    if baixo.endswith(".docx"):
-        try:
-            return _texto_de_docx(path), "docx:word/document.xml"
-        except zipfile.BadZipFile:
-            return C.envelope(
-                PARSER, path, C.STATUS_FORMATO, "stdlib", [],
-                extra={"erro": "Arquivo .docx invalido (nao e um zip OOXML)."},
-            )
     if baixo.endswith((".txt", ".md")):
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             return fh.read(), path
@@ -151,7 +164,11 @@ def _achados_de_pdf(path: str) -> dict[str, Any]:
             altura = page.rect.height
             texto = ""
             faixas: list[tuple[int, int, bool, list[float]]] = []  # (ini, fim, oculto, bbox)
-            for bloco in page.get_text("dict").get("blocks", []):
+            try:  # inclui texto posicionado fora da area visivel da pagina
+                info = page.get_text("dict", clip=fitz.INFINITE_RECT())
+            except Exception:
+                info = page.get_text("dict")
+            for bloco in info.get("blocks", []):
                 for linha in bloco.get("lines", []):
                     for span in linha.get("spans", []):
                         t = span.get("text") or ""
@@ -159,7 +176,8 @@ def _achados_de_pdf(path: str) -> dict[str, Any]:
                             continue
                         ini = len(texto)
                         texto += t
-                        faixas.append((ini, len(texto), _span_oculto(span), list(span.get("bbox", []))))
+                        fora = not fitz.Rect(span.get("bbox") or (0, 0, 0, 0)).intersects(page.rect)
+                        faixas.append((ini, len(texto), _span_oculto(span) or fora, list(span.get("bbox", []))))
                         texto += " "
                 texto += "\n"
 
@@ -177,6 +195,36 @@ def _achados_de_pdf(path: str) -> dict[str, Any]:
                         zona=P.classificar_zona(bbox, altura),
                     )
                 )
+            # anotacoes/comentarios e campos de formulario da pagina: fora do texto impresso
+            extras: list[tuple[str, str]] = []
+            try:
+                for an in page.annots() or []:
+                    info = an.info or {}
+                    t = " ".join(x for x in (info.get("title"), info.get("subject"), info.get("content")) if x)
+                    if t.strip():
+                        extras.append(("anotação ou comentário", t))
+            except Exception:
+                pass
+            try:
+                for wd in page.widgets() or []:
+                    t = " ".join(str(x) for x in (wd.field_name, wd.field_value, wd.field_label) if x)
+                    if t.strip():
+                        extras.append(("campo de formulário", t))
+            except Exception:
+                pass
+            for zona_x, t in extras:
+                for tag, sev, trecho, _i, _f, ctx in P.achados_lexicos(t):
+                    achados.append(_achado_lexico(tag, sev, trecho, ctx, f"pagina {pno + 1}", True, zona=zona_x))
+        # propriedades do arquivo e marcadores (indice lateral)
+        meta = doc.metadata or {}
+        textos_doc = [("propriedades do arquivo", " ".join(str(v) for v in meta.values() if v))]
+        try:
+            textos_doc.append(("marcadores do PDF", " ".join(str(item[1]) for item in doc.get_toc())))
+        except Exception:
+            pass
+        for zona_x, t in textos_doc:
+            for tag, sev, trecho, _i, _f, ctx in P.achados_lexicos(t):
+                achados.append(_achado_lexico(tag, sev, trecho, ctx, "documento", True, zona=zona_x))
     finally:
         doc.close()
     return C.envelope(PARSER, path, C.STATUS_OK, "PyMuPDF", achados)
@@ -190,8 +238,14 @@ def _achados_de_pdf(path: str) -> dict[str, Any]:
 def analisar(path: str) -> dict[str, Any]:
     if path != "-":
         with open(path, "rb") as fh:
-            if b"%PDF" in fh.read(1024):
-                return _achados_de_pdf(path)
+            cab = fh.read(1024)
+        if b"%PDF" in cab:
+            return _achados_de_pdf(path)
+        if cab.startswith(b"PK"):
+            if DX.eh_docx(path):
+                return _achados_de_docx(path)
+            return C.envelope(PARSER, path, C.STATUS_FORMATO, "stdlib", [],
+                              extra={"erro": "Arquivo .docx invalido (nao e um zip OOXML)."})
 
     resultado = _ler_texto(path)
     if isinstance(resultado, dict):

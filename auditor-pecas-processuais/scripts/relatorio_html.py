@@ -1,0 +1,526 @@
+#!/usr/bin/env python3
+"""relatorio_html.py — Gera a versao HTML (com botao "Exportar PDF") de um relatorio em markdown.
+
+Recebe o relatorio final escrito pelas skills (dossie de integridade ou relatorio pre-protocolo)
+e produz um HTML autocontido: CSS e icones inline, nenhum recurso externo, abre offline. O botao
+"Exportar PDF" chama a impressao do navegador, com folha de estilo A4 propria; o usuario escolhe
+"Salvar como PDF" e o texto sai selecionavel, com os links clicaveis.
+
+Tambem garante o credito do autor no proprio .md (acrescenta o rodape uma unica vez).
+
+CONTRATO / USO:
+    python3 scripts/relatorio_html.py <relatorio.md> [-o saida.html]
+
+Saida no stdout: JSON com `status`, `arquivo_md`, `arquivo_html`, `credito_md_adicionado` e
+`termos_tecnicos` (jargao encontrado no relatorio; vazio = linguagem de advogado).
+
+SEGURANCA: o relatorio transcreve texto da peca analisada, que pode trazer HTML ou script
+plantado. Todo conteudo e escapado antes de qualquer marcacao; link so aceita http(s) e mailto;
+a pagina declara Content-Security-Policy sem recurso externo.
+
+PROIBICOES: sem rede; nunca altera o conteudo do relatorio alem de acrescentar o rodape de credito.
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import html
+import json
+import os
+import re
+import sys
+from typing import Any
+
+import _marca as M
+
+# ---------------------------------------------------------------------------
+# Inline
+# ---------------------------------------------------------------------------
+
+_SELOS = {
+    "✅": "ok", "⚠️": "aviso", "⚠": "aviso", "🔴": "erro", "⬜": "neutro",
+    "🚫": "erro", "📝": "aviso", "🎯": "erro", "❓": "aviso", "📄": "neutro",
+}
+_RE_SELO = re.compile("(" + "|".join(sorted(map(re.escape, _SELOS), key=len, reverse=True)) + ")")
+_RE_CODE = re.compile(r"`([^`]+)`")
+_RE_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_RE_ITAL = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])")
+_RE_GRAV = re.compile(r"\b(gravidade\s+)(ALTA|M[ÉE]DIA|BAIXA|alta|m[ée]dia|baixa)\b")
+_ESQUEMAS_OK = ("http://", "https://", "mailto:")
+ICONE_LINK = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" '
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3'
+    'a4.5 4.5 0 0 0 6.4 6.4l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+)
+
+
+def _grav_classe(palavra: str) -> str:
+    p = palavra.lower().replace("é", "e")
+    return {"alta": "alta", "media": "media", "baixa": "baixa"}.get(p, "")
+
+
+def inline(texto: str) -> str:
+    """Markdown inline -> HTML. Escapa TUDO primeiro; so depois aplica a marcacao."""
+    guardados: list[str] = []
+
+    def guardar(frag: str) -> str:
+        guardados.append(frag)
+        return f"\x00{len(guardados) - 1}\x00"
+
+    s = html.escape(texto, quote=True)
+    s = _RE_CODE.sub(lambda m: guardar(f"<code>{m.group(1)}</code>"), s)
+
+    def _link(m: re.Match[str]) -> str:
+        rotulo, url = m.group(1), m.group(2)
+        url_crua = html.unescape(url).strip()
+        if url_crua.lower().startswith(_ESQUEMAS_OK) and rotulo.strip() == "🔗":
+            site = re.sub(r"^(https?://|mailto:)(www\.)?", "", url_crua, flags=re.I).split("/")[0]
+            return guardar(
+                f'<a class="link-fonte" href="{html.escape(url_crua, quote=True)}" rel="noopener noreferrer" '
+                f'target="_blank" title="Abrir a fonte: {html.escape(site, quote=True)}" '
+                f'aria-label="Abrir a fonte: {html.escape(site, quote=True)}">{ICONE_LINK}</a>'
+            )
+        if url_crua.lower().startswith(_ESQUEMAS_OK):
+            return guardar(
+                f'<a href="{html.escape(url_crua, quote=True)}" rel="noopener noreferrer" '
+                f'target="_blank">{rotulo}</a>'
+            )
+        return rotulo  # esquema nao permitido (javascript:, data:...): fica so o texto
+
+    s = _RE_LINK.sub(_link, s)
+    s = _RE_BOLD.sub(r"<strong>\1</strong>", s)
+    s = _RE_ITAL.sub(r"<em>\1</em>", s)
+    s = _RE_GRAV.sub(
+        lambda m: f'{m.group(1)}<span class="grav grav-{_grav_classe(m.group(2))}">{m.group(2)}</span>', s
+    )
+    s = _RE_SELO.sub(lambda m: f'<span class="selo selo-{_SELOS[m.group(1)]}">{m.group(1)}</span>', s)
+    s = re.sub(r"\x00(\d+)\x00", lambda m: guardados[int(m.group(1))], s)
+    return s
+
+
+def _celula(texto: str) -> str:
+    t = texto.strip()
+    classe = _grav_classe(re.sub(r"[*_`]", "", t))
+    if classe:
+        return f'<span class="grav grav-{classe}">{html.escape(re.sub(r"[*_`]", "", t))}</span>'
+    return inline(t)
+
+
+# ---------------------------------------------------------------------------
+# Blocos
+# ---------------------------------------------------------------------------
+
+_RE_TITULO = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_RE_HR = re.compile(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$")
+_RE_ITEM = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(.*)$")
+_RE_FICHA = re.compile(r"^\*\*([^*]{1,40}?):\*\*\s*(.+)$")
+_RE_SEP_TABELA = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+
+
+def _linhas_tabela(linha: str) -> list[str]:
+    s = linha.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c for c in re.split(r"(?<!\\)\|", s)]
+
+
+def _tabela(linhas: list[str]) -> str:
+    cab = _linhas_tabela(linhas[0])
+    corpo = [_linhas_tabela(l) for l in linhas[2:]]
+    th = "".join(f"<th>{inline(c.strip())}</th>" for c in cab)
+    trs = []
+    for linha in corpo:
+        linha = (linha + [""] * len(cab))[: max(len(cab), len(linha))]
+        trs.append("<tr>" + "".join(f"<td>{_celula(c)}</td>" for c in linha) + "</tr>")
+    return f'<div class="tabela"><table><thead><tr>{th}</tr></thead><tbody>{"".join(trs)}</tbody></table></div>'
+
+
+def _lista(linhas: list[str]) -> str:
+    """Lista com aninhamento por indentacao."""
+    itens: list[tuple[int, bool, str]] = []
+    for l in linhas:
+        m = _RE_ITEM.match(l)
+        if m:
+            itens.append((len(m.group(1).replace("\t", "    ")), m.group(2)[0].isdigit(), m.group(3)))
+        elif itens:
+            ind, ordenada, txt = itens[-1]
+            itens[-1] = (ind, ordenada, txt + " " + l.strip())
+
+    def montar(i: int, nivel: int) -> tuple[str, int]:
+        ordenada = itens[i][1]
+        tag = "ol" if ordenada else "ul"
+        partes = [f"<{tag}>"]
+        while i < len(itens) and itens[i][0] >= nivel:
+            ind, _, txt = itens[i]
+            if ind > nivel:
+                sub, i = montar(i, ind)
+                partes[-1] = partes[-1][: -len("</li>")] + sub + "</li>" if partes[-1].endswith("</li>") else partes[-1] + sub
+                continue
+            caixa = re.match(r"^\[( |x|X)\]\s+(.*)$", txt)
+            if caixa:
+                marcada = caixa.group(1).lower() == "x"
+                txt_html = f'<span class="caixa{" marcada" if marcada else ""}">{"✔" if marcada else ""}</span>{inline(caixa.group(2))}'
+            else:
+                txt_html = inline(txt)
+            partes.append(f"<li>{txt_html}</li>")
+            i += 1
+        partes.append(f"</{tag}>")
+        return "".join(partes), i
+
+    saida, _ = montar(0, itens[0][0]) if itens else ("", 0)
+    return saida
+
+
+def blocos(md: str) -> list[tuple[str, str, str]]:
+    """Converte markdown em blocos (tipo, html, texto_cru)."""
+    linhas = md.replace("\r\n", "\n").split("\n")
+    out: list[tuple[str, str, str]] = []
+    i = 0
+    while i < len(linhas):
+        l = linhas[i]
+        if not l.strip() or l.strip() == M.MARCADOR_RODAPE:
+            i += 1
+            continue
+        if l.strip().startswith("```"):
+            j = i + 1
+            while j < len(linhas) and not linhas[j].strip().startswith("```"):
+                j += 1
+            codigo = "\n".join(linhas[i + 1: j])
+            out.append(("pre", f"<pre><code>{html.escape(codigo)}</code></pre>", codigo))
+            i = j + 1
+            continue
+        m = _RE_TITULO.match(l)
+        if m:
+            nivel = len(m.group(1))
+            out.append((f"h{nivel}", f"<h{nivel}>{inline(m.group(2))}</h{nivel}>", m.group(2)))
+            i += 1
+            continue
+        if _RE_HR.match(l):
+            out.append(("hr", "<hr>", ""))
+            i += 1
+            continue
+        if "|" in l and i + 1 < len(linhas) and _RE_SEP_TABELA.match(linhas[i + 1]):
+            j = i + 2
+            while j < len(linhas) and linhas[j].strip() and "|" in linhas[j]:
+                j += 1
+            out.append(("table", _tabela(linhas[i:j]), ""))
+            i = j
+            continue
+        if l.lstrip().startswith(">"):
+            j = i
+            dentro = []
+            while j < len(linhas) and linhas[j].lstrip().startswith(">"):
+                dentro.append(re.sub(r"^\s*>\s?", "", linhas[j]))
+                j += 1
+            interno = "".join(h for _, h, _ in blocos("\n".join(dentro))).replace('<p class="aviso">', "<p>")
+            cru = " ".join(dentro)
+            classe = "aviso" if ("⚠" in cru or "conferência humana" in cru.lower()) else "nota"
+            out.append(("quote", f'<blockquote class="{classe}">{interno}</blockquote>', cru))
+            i = j
+            continue
+        if _RE_ITEM.match(l):
+            j = i
+            while j < len(linhas) and linhas[j].strip() and (
+                _RE_ITEM.match(linhas[j]) or linhas[j].startswith(("  ", "\t"))
+            ):
+                j += 1
+            out.append(("list", _lista(linhas[i:j]), ""))
+            i = j
+            continue
+        j = i
+        par = []
+        while j < len(linhas) and linhas[j].strip() and not (
+            _RE_TITULO.match(linhas[j]) or _RE_HR.match(linhas[j]) or _RE_ITEM.match(linhas[j])
+            or linhas[j].lstrip().startswith((">", "```"))
+            or ("|" in linhas[j] and j + 1 < len(linhas) and _RE_SEP_TABELA.match(linhas[j + 1]))
+        ):
+            par.append(linhas[j].strip())
+            j += 1
+        cru = " ".join(par)
+        ficha = [_RE_FICHA.match(p) for p in par]
+        if len(par) >= 2 and all(ficha):
+            itens = "".join(
+                f"<div><dt>{inline(m.group(1))}</dt><dd>{inline(m.group(2))}</dd></div>" for m in ficha if m
+            )
+            out.append(("ficha", f'<dl class="ficha">{itens}</dl>', cru))
+            i = j
+            continue
+        classe = ' class="aviso"' if ("conferência humana" in cru.lower() and ("aviso" in cru.lower() or "⚠" in cru)) else ""
+        # linhas do mesmo paragrafo se juntam com espaco (markdown); quebra forcada so com
+        # linha iniciada por **Rotulo:** (capa/metadados) — o resto flui como texto corrido
+        partes_html = []
+        for k, p in enumerate(par):
+            sep = "<br>" if k and _RE_FICHA.match(p) else " "
+            partes_html.append((sep if k else "") + inline(p))
+        out.append(("p", f"<p{classe}>" + "".join(partes_html) + "</p>", cru))
+        i = j
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Pagina
+# ---------------------------------------------------------------------------
+
+_RE_SECAO = re.compile(r"^\s*([A-D])\s*[.)—–-]\s*")
+
+ICONES = {
+    "email": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 7l8.5 6 8.5-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    "linkedin": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="currentColor"/><rect x="6.2" y="10" width="2.6" height="7.6" fill="#fff"/><circle cx="7.5" cy="7" r="1.6" fill="#fff"/><path d="M11 10h2.5v1.2c.5-.8 1.5-1.4 2.8-1.4 2 0 3 1.3 3 3.6v4.2h-2.6v-3.8c0-1.1-.4-1.8-1.4-1.8s-1.7.7-1.7 1.9v3.7H11z" fill="#fff"/></svg>',
+    "whatsapp": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8a9.1 9.1 0 0 0-7.8 13.8L3 21l4.5-1.2A9.1 9.1 0 1 0 12 2.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.6 7.6c.3-.3.7-.3.9 0l1.1 1.6c.2.3.1.7-.1.9l-.6.6c.6 1.3 1.6 2.3 2.9 2.9l.6-.6c.2-.2.6-.3.9-.1l1.6 1.1c.3.2.3.6 0 .9l-.8.8c-.6.6-1.6.7-2.4.3-2.1-1-3.9-2.8-4.9-4.9-.4-.8-.3-1.8.3-2.4z" fill="currentColor"/></svg>',
+    "pdf": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2.5h8l4.5 4.5v14.5H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2.5V7h4.5M12 10.5v6m0 0l-2.5-2.5M12 16.5l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    "escudo": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+}
+
+CSS = r"""
+:root{--tinta:#1c2433;--suave:#5b6577;--linha:#e3e6ec;--fundo:#f4f5f8;--papel:#fff;--marca:#1f3a5f;--marca2:#2c5282;--ouro:#b8893b;
+--a:#b42318;--a-bg:#fdecea;--b:#1f5fa8;--b-bg:#e8f1fb;--c:#8a5a00;--c-bg:#fdf3e1;--d:#5b3fa6;--d-bg:#f0ecfa;
+--ok:#1e7a46;--ok-bg:#e5f4ec;--av:#9a6200;--av-bg:#fdf1dc;--er:#b42318;--er-bg:#fdecea;--ne:#5b6577;--ne-bg:#eef0f4}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--fundo);color:var(--tinta);font:15px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif}
+.barra{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 20px;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--linha)}
+.barra .prod{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--marca);font-size:14px}
+.barra .prod svg{width:20px;height:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:8px;padding:9px 16px;background:var(--marca);color:#fff;font:600 14px/1 inherit;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn:hover{background:var(--marca2)}
+.btn svg{width:18px;height:18px}
+main{max-width:980px;margin:0 auto;padding:24px 16px 8px}
+.hero{background:linear-gradient(135deg,var(--marca),#15263f);color:#fff;border-radius:14px;padding:28px 30px 24px;margin-bottom:18px;position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle at 35% 65%,rgba(232,190,96,.95),rgba(201,152,58,.85) 55%,rgba(166,120,38,.75));box-shadow:0 0 40px rgba(212,166,74,.45)}
+.hero>*{position:relative;z-index:1}
+.hero .rotulo{text-transform:uppercase;letter-spacing:.12em;font-size:11.5px;color:#e9d3a8;font-weight:600}
+.hero h1{margin:6px 0 4px;font:600 26px/1.25 Georgia,"Times New Roman",serif}
+.hero .gerado{font-size:12.5px;color:#c9d3e3}
+.card{background:var(--papel);border:1px solid var(--linha);border-radius:12px;padding:20px 24px;margin:0 0 16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.card>h2:first-child{margin-top:0}
+.secao{border-left:5px solid var(--cor,var(--marca))}
+.secao>h2{display:flex;align-items:center;gap:10px}
+.letra{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:var(--cor);color:#fff;font:700 15px/1 inherit;flex:none}
+.secao-a{--cor:var(--a)}.secao-b{--cor:var(--b)}.secao-c{--cor:var(--c)}.secao-d{--cor:var(--d)}
+h2{font:600 19px/1.3 Georgia,"Times New Roman",serif;color:var(--marca);margin:22px 0 10px}
+h3{font-size:15.5px;margin:18px 0 8px;color:var(--tinta)}
+h4{font-size:14.5px;margin:14px 0 6px;color:var(--suave)}
+p{margin:8px 0}
+a{color:var(--marca2)}
+code{font:12.5px/1.4 Consolas,"SFMono-Regular",Menlo,monospace;background:#f1f3f7;border:1px solid var(--linha);border-radius:5px;padding:1px 5px;word-break:break-word}
+pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px 16px;overflow:auto}
+pre code{background:none;border:0;color:inherit;padding:0}
+hr{border:0;border-top:1px solid var(--linha);margin:18px 0}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:3px 0}
+blockquote{margin:12px 0;padding:10px 16px;border-radius:8px;background:#f7f8fb;border-left:4px solid var(--marca2);color:#2d3748}
+blockquote p{margin:4px 0}
+.aviso{background:var(--av-bg)!important;border-left:4px solid var(--ouro)!important;border-radius:8px;padding:12px 16px!important}
+.tabela{overflow-x:auto;margin:10px 0;border:1px solid var(--linha);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{background:#f1f3f7;text-align:left;font-weight:600;color:var(--marca);padding:9px 12px;border-bottom:1px solid var(--linha);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--linha);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even) td{background:#fafbfc}
+.selo{display:inline-block;border-radius:6px;padding:0 4px;margin-right:2px;line-height:1.5}
+.selo-ok{background:var(--ok-bg)}.selo-aviso{background:var(--av-bg)}.selo-erro{background:var(--er-bg)}.selo-neutro{background:var(--ne-bg)}
+.grav{display:inline-block;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.grav-alta{background:var(--er-bg);color:var(--er)}.grav-media{background:var(--av-bg);color:var(--av)}.grav-baixa{background:var(--ne-bg);color:var(--ne)}
+.caixa{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:1.5px solid var(--suave);border-radius:4px;margin-right:8px;font-size:11px;vertical-align:-2px}
+.caixa.marcada{background:var(--ok);border-color:var(--ok);color:#fff}
+.link-fonte{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:#eef3fb;color:var(--marca2);border:1px solid #d6e2f3}
+.link-fonte:hover{background:var(--marca2);color:#fff}
+.link-fonte svg{width:16px;height:16px}
+.ficha{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:4px 0 12px}
+.ficha div{background:#f7f8fb;border:1px solid var(--linha);border-radius:10px;padding:10px 14px}
+.ficha dt{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--suave);font-weight:600;margin-bottom:2px}
+.ficha dd{margin:0;font-weight:600;color:var(--tinta)}
+.credito{max-width:980px;margin:6px auto 30px;padding:0 16px}
+.credito .caixa-cred{background:var(--papel);border:1px solid var(--linha);border-top:4px solid var(--ouro);border-radius:12px;padding:18px 24px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
+.credito .frase{font:italic 15px/1.4 Georgia,"Times New Roman",serif;color:var(--marca)}
+.contatos{display:flex;flex-wrap:wrap;gap:10px}
+.contatos a{display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--marca);border:1px solid var(--linha);border-radius:999px;padding:6px 12px;font-size:13px;background:#fafbfc}
+.contatos a:hover{border-color:var(--marca2);background:#fff}
+.contatos svg{width:18px;height:18px;flex:none}
+.contatos .ic-whatsapp{color:#1f8a4c}.contatos .ic-linkedin{color:#0a66c2}.contatos .ic-email{color:var(--marca)}
+@media (max-width:640px){.hero{padding:22px 18px}.hero h1{font-size:21px}.card{padding:16px}.barra{padding:8px 12px}.barra .prod span{display:none}}
+@page{size:A4;margin:12mm 0 12mm}
+@page:first{margin-top:0}
+@media print{
+ body{background:#fff;font-size:11pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ .barra{display:none}
+ main{max-width:none;padding:0 9mm}
+ .hero{border-radius:0;margin:0 -9mm 12px;padding:20px 9mm 18px}
+ .card{box-shadow:none;border-radius:8px;padding:12px 16px;margin-bottom:10px}
+ tr,.caixa-cred,.ficha,blockquote.aviso{break-inside:avoid;page-break-inside:avoid}
+ blockquote p{break-inside:avoid}
+ h3,h4{break-after:avoid;page-break-after:avoid}
+ h2,h3{break-after:avoid;page-break-after:avoid}
+ .tabela{overflow:visible}
+ th{white-space:normal}
+ a{color:var(--marca2);text-decoration:none}
+ .credito{max-width:none;padding:0 9mm;margin:10px 0 0}
+}
+"""
+
+
+def _sem_credito_md(md: str) -> str:
+    """Tira do markdown o bloco de credito: no HTML ele vira o rodape proprio, com icones."""
+    if M.MARCADOR_RODAPE in md:
+        md = md.split(M.MARCADOR_RODAPE)[0]
+    linhas = [
+        l for l in md.split("\n")
+        if M.CREDITO not in l and not (M.EMAIL in l and "wa.me" in l)
+    ]
+    return "\n".join(linhas).rstrip().rstrip("-").rstrip()
+
+
+def montar_pagina(md: str) -> str:
+    bl = blocos(_sem_credito_md(md))
+    titulo = "Relatório de auditoria"
+    for i, (tipo, _h, cru) in enumerate(bl):
+        if tipo == "h1":
+            titulo = cru
+            bl = bl[:i] + bl[i + 1:]
+            break
+    titulo_txt = re.sub(r"[*_`]", "", titulo)
+
+    corpo: list[str] = []
+    aberto = False
+    corpo.append('<section class="card capa">')
+    aberto = True
+    for tipo, h, cru in bl:
+        if tipo == "h2":
+            if aberto:
+                corpo.append("</section>")
+            m = _RE_SECAO.match(re.sub(r"[*_`]", "", cru))
+            if m:
+                letra = m.group(1)
+                resto = inline(_RE_SECAO.sub("", cru, count=1))
+                corpo.append(f'<section class="card secao secao-{letra.lower()}"><h2><span class="letra">{letra}</span>{resto}</h2>')
+            else:
+                corpo.append(f'<section class="card">{h}')
+            aberto = True
+            continue
+        if tipo == "hr":
+            continue  # separadores do markdown viram o espaco entre os cartoes
+        corpo.append(h)
+    if aberto:
+        corpo.append("</section>")
+    corpo_html = "\n".join(c for c in corpo if c != '<section class="card capa"></section>')
+    corpo_html = corpo_html.replace('<section class="card capa">\n</section>', "")
+
+    contatos = "".join(
+        f'<a class="ic-{icone}" href="{html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank" '
+        f'title="{html.escape(rotulo)}">{ICONES[icone]}<span>{html.escape(texto)}</span></a>'
+        for rotulo, texto, url, icone in M.CONTATOS
+    )
+    gerado = _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+    return f"""<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<meta name="author" content="{html.escape(M.AUTOR)}">
+<title>{html.escape(titulo_txt)}</title>
+<style>{CSS}</style>
+</head>
+<body>
+<div class="barra">
+  <div class="prod">{ICONES["escudo"]}<span>{html.escape(M.PRODUTO)}</span></div>
+  <button class="btn" id="exportar" type="button">{ICONES["pdf"]}Exportar PDF</button>
+</div>
+<main>
+<header class="hero">
+  <div class="rotulo">{html.escape(M.PRODUTO)}</div>
+  <h1>{inline(titulo)}</h1>
+  <div class="gerado">Gerado em {gerado}</div>
+</header>
+{corpo_html}
+</main>
+<footer class="credito">
+  <div class="caixa-cred">
+    <div class="frase">{html.escape(M.CREDITO)}</div>
+    <div class="contatos">{contatos}</div>
+  </div>
+</footer>
+<script>document.getElementById("exportar").addEventListener("click",function(){{window.print();}});</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+# Jargao que nao deve chegar ao advogado (ver a tabela de linguagem em estilo-e-fronteiras).
+# O script so APONTA: quem reescreve o trecho e a skill, e roda o script de novo.
+_JARGAO = [
+    (r"\bparsers?\b", "parser"), (r"\b(web)?fetch\b", "fetch"), (r"\bbbox\b", "bbox"),
+    (r"\bspans?\b", "span"), (r"\brgb\s*[=(]", "rgb"), (r"#[0-9a-f]{6}\b", "cor hexadecimal"),
+    (r"\bpymupdf\b|\bpikepdf\b|\bpdfplumber\b|\bfitz\b", "biblioteca"),
+    (r"\b[a-z_]+\.py\b", "nome de script"), (r"\bsha-?256\b", "sha-256"),
+    (r"missing_dependency|formato_nao_suportado|\bstatus\s+ok\b", "status interno"),
+    (r"\bcodepoints?\b|\bU\+[0-9A-F]{4,5}\b", "codepoint"), (r"\bxref\b", "xref"),
+    (r"\bjson\b", "json"), (r"\bregex\b", "regex"), (r"\bmotor\b", "motor"),
+    (r"\bG[1-8]\b.{0,40}(✔|✓)", "checklist interno"),
+]
+
+
+def termos_tecnicos(md: str) -> list[str]:
+    texto = _sem_credito_md(md)
+    achados = []
+    for rx, nome in _JARGAO:
+        if re.search(rx, texto, re.IGNORECASE):
+            achados.append(nome)
+    return achados
+
+
+def _emitir(d: dict[str, Any]) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        pass
+    print(json.dumps(d, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _main(argv: list[str]) -> int:
+    pos = [a for a in argv if not a.startswith("-")]
+    saida = None
+    if "-o" in argv:
+        k = argv.index("-o")
+        if k + 1 < len(argv):
+            saida = argv[k + 1]
+            pos = [a for a in pos if a != saida]
+    if not pos:
+        return _emitir({"status": "error", "erro": "USO: python3 relatorio_html.py <relatorio.md> [-o saida.html]"})
+    md_path = pos[0]
+    if not os.path.isfile(md_path):
+        return _emitir({"status": "error", "erro": f"Arquivo nao encontrado: {md_path}"})
+    try:
+        with open(md_path, encoding="utf-8") as fh:
+            md = fh.read()
+        adicionado = False
+        if M.MARCADOR_RODAPE not in md and M.CREDITO not in md:
+            md = md.rstrip() + M.rodape_md()
+            with open(md_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(md)
+            adicionado = True
+        html_path = saida or os.path.splitext(md_path)[0] + ".html"
+        with open(html_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(montar_pagina(md))
+    except Exception as exc:
+        return _emitir({"status": "error", "arquivo_md": md_path, "erro": f"Falha ao gerar o HTML: {exc}"})
+    return _emitir({
+        "status": "ok", "arquivo_md": md_path, "arquivo_html": html_path,
+        "credito_md_adicionado": adicionado,
+        "termos_tecnicos": termos_tecnicos(md),
+        "aviso": "" if not termos_tecnicos(md) else
+                 "O relatorio tem jargao tecnico: reescreva esses trechos em linguagem de advogado e rode de novo.",
+    })
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1:]))

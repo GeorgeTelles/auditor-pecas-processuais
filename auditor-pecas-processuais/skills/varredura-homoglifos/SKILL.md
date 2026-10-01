@@ -2,7 +2,7 @@
 name: varredura-homoglifos
 description: >
   VARREDURA-HOMOGLIFOS — Camada 1 do motor de integridade estrutural. Usa o
-  parser local unicode_scan.py (.txt/.md/.docx) com foco nos achados de
+  parser local unicode_scan.py (.pdf/.docx/.txt/.md) com foco nos achados de
   homóglifo e mistura de scripts: caracteres de alfabetos diferentes visualmente
   idênticos (ex.: "а" cirílico no lugar do "a" latino), que fazem uma palavra
   parecer igual na tela mas virar outra string para a máquina — escapando de
@@ -56,8 +56,8 @@ ter (TRT-8, `context/casos-ancora-sancoes.md` §1).
 
 | Campo | Obrigatório | Observação |
 |---|---|---|
-| `arquivo` | sim | `.txt`, `.md` ou `.docx` |
-| Peça em PDF | — | Salvar o texto extraído em `.txt` e rodar sobre ele — o parser varre texto |
+| `arquivo` | sim | `.pdf`, `.docx`, `.txt` ou `.md` |
+| Peça em PDF | — | O parser extrai o texto de cada página e varre; o achado sai com a página |
 
 ## 4. Processamento
 
@@ -80,7 +80,7 @@ família de achados. Retorno em JSON: `parser`, `versao`, `arquivo`, `status`,
 | `ok` | Prosseguir para o Passo 3 |
 | `missing_dependency` | DECLARAR: "varredura estrutural não executada" + exibir o `dependency_hint`. NUNCA improvisar o achado "no olho" |
 | `error` | Reportar o erro literal do parser |
-| `formato_nao_suportado` | Informar os formatos aceitos (`.txt`/`.md`/`.docx`) |
+| `formato_nao_suportado` | Informar os formatos aceitos (`.pdf`/`.docx`/`.txt`/`.md`) |
 
 Motores possíveis deste parser: `stdlib` (sempre disponível) e
 `stdlib+confusable_homoglyphs` (lib opcional) — não há modo degradado.

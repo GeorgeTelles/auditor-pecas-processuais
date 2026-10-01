@@ -2,9 +2,11 @@
 name: varredura-texto-oculto
 description: >
   VARREDURA-TEXTO-OCULTO — Camada 1 do motor de integridade estrutural. Executa o
-  parser local pdf_integridade.py sobre o PDF da peça e reporta texto invisível ao
-  leitor humano: fonte branca ou quase-branca, corpo menor que 4pt, opacidade
-  próxima de zero e modo de renderização invisível — o vetor do caso TRT-8 (multa
+  parser local pdf_integridade.py (PDF) ou docx_integridade.py (Word, em todas as partes:
+  corpo, cabeçalho, rodapé, notas, comentários, caixas de texto, propriedades) e reporta
+  texto invisível ao leitor humano: fonte branca ou da cor do fundo, corpo menor que 4pt,
+  texto marcado como oculto no Word, texto fora da página, opacidade próxima de zero e
+  modo de renderização invisível — o vetor do caso TRT-8 (multa
   de 10% do valor da causa). Todo achado anexa a evidência bruta extraída pelo
   parser (RGB, tamanho de fonte, modo de render) e o texto encontrado é roteado ao
   classificador-prompt-injection, que julga a intenção. Sinaliza — nunca conclui
@@ -26,6 +28,13 @@ não vê ao abrir o arquivo:
 | Corpo mínimo | Tamanho de fonte < 4pt — ilegível a olho nu, legível pela máquina |
 | Opacidade ~0 | Texto transparente via canal alfa/estado gráfico |
 | Modo de render invisível | Text rendering mode 3 (não preenche nem contorna) — o texto existe no stream, mas não é pintado |
+
+**Em Word (.docx)** o `docx_integridade.py` lê todas as partes do arquivo e resolve a formatação
+como o Word (padrão → estilo de parágrafo → estilo de caractere → formatação direta), então pega
+também letra branca **herdada de estilo**. Motivos: letra branca ou da mesma cor do fundo (página,
+célula, realce), letra < 4pt, texto marcado como oculto no Word, e frase de comando a IA guardada
+em comentário, propriedades do arquivo, dados anexos ou texto alternativo de imagem. Em PDF, também
+o texto posicionado **fora da área visível** da página. Conferência visual só existe para PDF.
 
 Quem lê a peça no visualizador não vê nada; quem processa o arquivo por máquina
 (inclusive uma IA que resuma ou conteste a peça) lê tudo. É exatamente o canal

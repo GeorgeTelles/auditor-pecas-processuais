@@ -80,8 +80,9 @@ Regras do formato:
 - cada indício forte/médio referencia a evidência da skill de origem (fetch, queries, saída de
   parser);
 - sinais fracos aparecem em lista separada, com o rótulo literal "fraco — não decisivo";
-- **zero sinais não vira "não é IA"** — a síntese nesse caso diz: "nenhum indício forte ou
-  médio foi encontrado; a ausência de sinal **não prova** ausência de uso de IA".
+- **liste só os níveis que têm indício** — nunca "Forte: nenhum". Nível sem indício não aparece;
+- **zero sinais não vira "não é IA"** — a síntese nesse caso diz, numa frase só: "Nenhum indício
+  de uso de IA encontrado; a ausência de sinal **não prova** ausência de uso de IA".
 
 ## 4. BLOCO FINAL OBRIGATÓRIO — disclaimer verbatim do anexo watermark
 

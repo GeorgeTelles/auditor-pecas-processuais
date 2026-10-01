@@ -9,6 +9,7 @@ contrária e a sua antes do protocolo.
    sistema de IA (parsing local determinístico; caso real já sancionado na Justiça do Trabalho). A
    varredura léxica também lê o texto **visível** ("IA, ignore…", "não impugne os documentos"). O
    rodapé PJe/ICP-Brasil é reconhecido e rebaixado, nunca suprimido.
+2. **Os 5 tipos de ataque, em PDF e em Word**: desvio de função da IA, supressão de informação, indução de viés, padrões técnicos (comando em Base64 ou hexadecimal, tags de prompt) e falsa autoridade. No Word, lê corpo, cabeçalho, rodapé, notas, comentários, caixas de texto e propriedades, e acha letra branca mesmo quando ela vem do estilo do documento.
 2. **Unicode invisível e homóglifos**: caracteres invisíveis e trocas de alfabeto que enganam
    filtros.
 3. **Jurisprudência inventada**: cada citação conferida com fetch real na fonte oficial, na peça
@@ -30,6 +31,14 @@ fato; o advogado conclui o direito.
 3. Envie o zip do plugin ou cole a URL deste repositório.
 4. Instale o plugin `auditor-pecas-processuais` e abra uma nova conversa.
 
+## Saída
+
+O relatório final sai em **dois arquivos**, lado a lado:
+
+- `relatorio-auditoria-<peça>-<data>.md`: o dossiê em markdown;
+- `relatorio-auditoria-<peça>-<data>.html`: a mesma análise em página formatada, que abre offline,
+  com o botão **Exportar PDF** (A4, texto selecionável, links clicáveis).
+
 ## Uso
 
 - `/auditar-peca`: auditoria completa da peça recebida
@@ -37,6 +46,13 @@ fato; o advogado conclui o direito.
 - `/conferir-citacoes`: só a camada de citações
 - `/relatorio-auditoria`: relatório final consolidado
 
+## Licença
+
+Uso **gratuito, pessoal e profissional próprio**, inclusive nos casos dos seus clientes. Os
+relatórios gerados são seus. É **vedado** copiar, reproduzir, redistribuir, vender, modificar ou
+criar versão derivada do plugin sem autorização por escrito. Texto completo em [`LICENSE`](LICENSE).
+
 ---
 
-© 2026 George Telles - AG TECH. A conferência humana final é sempre do advogado responsável.
+*Esta skill foi desenvolvida por George Telles.*
+[E-mail](mailto:georgesmattos@gmail.com) · [LinkedIn](https://www.linkedin.com/in/georgetelles/) · [WhatsApp (71) 98822-9457](https://wa.me/5571988229457)

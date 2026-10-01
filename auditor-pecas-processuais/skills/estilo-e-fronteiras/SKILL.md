@@ -75,6 +75,45 @@ A fronteira central é **integridade × mérito**:
 | Tratar a fraude processual como **crime** — persecução, queixa, defesa | Entrega o alerta técnico + dossiê | Nunca conclui o crime (T4) |
 | **Cálculo** da multa (1–10% do valor da causa) e demais cálculos | Aponta a base legal e o valor da causa, se constar da peça | Não calcula a multa |
 
+## Linguagem do relatório — para advogado, sem jargão técnico
+
+Relatório final, resumo no chat e HTML/PDF são lidos por advogado. Nunca apareça nome de script
+(`*.py`), de biblioteca (PyMuPDF, pikepdf...), de campo JSON nem de status interno. Troque:
+
+| Não escreva | Escreva |
+|---|---|
+| parser, varredura do parser, motor | verificação automática do arquivo |
+| fetch, WebFetch, fetch 200 | consulta ao site oficial (STF, STJ, TST, Planalto...) |
+| span, bbox, coordenadas | trecho · posição na página ("no alto da página 7") |
+| rgb=255,255,255 · cor #FFFFFF | letra branca, igual ao fundo |
+| fonte 0,96pt (< 4pt) | letra de tamanho quase 1 ponto (a letra comum tem 12) |
+| 3 Tr / modo de renderização | texto marcado para não aparecer na tela |
+| codepoint U+200B | caractere invisível (espaço sem largura) |
+| homóglifo | letra de outro alfabeto que imita letra comum |
+| metadados | dados gravados no arquivo (autor, datas, programa) |
+| hash / SHA-256 | impressão digital do arquivo — só quando houver comparação pedida |
+| status `missing_dependency` | "esta verificação não pôde ser feita" + como resolver |
+| comando dirigido a IA (classificado 🎯) | **prompt injection** — na 1ª menção: "comando plantado na peça para manipular um sistema de IA que a leia" |
+| padrão léxico ainda não classificado | frase de comando a IA (só vira "prompt injection" depois do classificador) |
+| grupo A / B / C / D / E | desvio de função da IA · supressão de informação · indução de viés · padrão técnico · falsa autoridade (sempre o nome, nunca a letra sozinha) |
+| `w:vanish`, run, estilo herdado | "texto marcado como oculto no Word" · "letra branca definida no estilo do documento" |
+
+Cada achado responde a três perguntas: **o que é, onde está e como o advogado confere sozinho**.
+Fonte consultada (citação, lei) sai como link com ícone: `[🔗](URL da página aberta)`; sem página
+aberta, "—". Nunca link inventado.
+Dados brutos só em anexo técnico, quando pedido.
+
+## Crédito do autor — fecho de toda entrega final
+
+Todo relatório final (dossiê, relatório pré-protocolo) termina com o crédito, **no chat, no MD e no
+HTML/PDF**. No MD e no HTML, o `relatorio_html.py` já acrescenta o rodapé; no chat, a última linha
+da mensagem é exatamente:
+
+*Esta skill foi desenvolvida por George Telles.*  
+[E-mail](mailto:georgesmattos@gmail.com) · [LinkedIn](https://www.linkedin.com/in/georgetelles/) · [WhatsApp (71) 98822-9457](https://wa.me/5571988229457)
+
+Respostas intermediárias (uma pergunta, um botão, um passo) não levam o crédito — só a entrega final.
+
 ## A fala de quando o produto para (modelo)
 
 > Aqui a análise sai da **integridade**, que é o que este produto cobre, e entra em

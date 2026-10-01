@@ -2,7 +2,7 @@
 name: varredura-unicode-invisivel
 description: >
   VARREDURA-UNICODE-INVISIVEL — Camada 1 do motor de integridade estrutural.
-  Executa o parser local unicode_scan.py (.txt/.md/.docx) e reporta caracteres
+  Executa o parser local unicode_scan.py (.pdf/.docx/.txt/.md) e reporta caracteres
   Unicode invisíveis no texto da peça: bloco Tags U+E0000–E007F (ASCII smuggling —
   instrução inteira escondida em caracteres que nenhum editor mostra), zero-width
   (U+200B/200C/200D/2060/FEFF) e controles bidirecionais. Cada achado sai com
@@ -43,8 +43,8 @@ sem nem precisar de fonte branca: o texto simplesmente não é exibido.
 
 | Campo | Obrigatório | Observação |
 |---|---|---|
-| `arquivo` | sim | `.txt`, `.md` ou `.docx` |
-| Peça em PDF | — | Salvar o texto extraído da peça em `.txt` e rodar sobre ele (ou usar o texto colado pelo usuário, salvo em arquivo) — o parser varre texto, não o binário do PDF |
+| `arquivo` | sim | `.pdf`, `.docx`, `.txt` ou `.md` |
+| Peça em PDF | — | O parser extrai o texto página a página e varre. Em PDF, caractere invisível só aparece se o arquivo o guardar no texto (o Word costuma descartá-lo); letra de outro alfabeto é preservada. Diga isso no relatório só se relevante |
 
 ## 4. Processamento
 
@@ -65,7 +65,7 @@ Retorno em JSON no stdout: `parser`, `versao`, `arquivo`, `status`,
 | `ok` | Prosseguir para o Passo 3 |
 | `missing_dependency` | DECLARAR: "varredura estrutural não executada" + exibir o `dependency_hint`. NUNCA improvisar o achado "no olho" |
 | `error` | Reportar o erro literal do parser |
-| `formato_nao_suportado` | Informar os formatos aceitos (`.txt`/`.md`/`.docx`) e como obter o texto da peça |
+| `formato_nao_suportado` | Informar os formatos aceitos (`.pdf`/`.docx`/`.txt`/`.md`) e como obter o texto da peça |
 
 Motores possíveis deste parser: `stdlib` (sempre disponível) e
 `stdlib+confusable_homoglyphs` (lib opcional) — não há modo degradado.
